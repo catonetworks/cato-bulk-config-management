@@ -1,15 +1,15 @@
-# 2-groups — Bulk Groups
+# 3-groups — Bulk Groups
 
 This folder bulk-manages **Groups** — the one dependency object type that is
 scoped to live sites (`SITE` / `SITE_NETWORK_SUBNET` members), and therefore
-must apply *after* `0-sites/` rather than alongside the other dependency
-types in `1-dependencies/`. It was split out of `1-dependencies/` on
+must apply *after* `1-sites/` rather than alongside the other dependency
+types in `0-dependencies/`. It was split out of `0-dependencies/` on
 2026-11-06 for exactly this reason — see `docs/bulk-apply-runbook.md` and
 CLAUDE.md's Structure section for the full deployment-order rationale. Uses
 the native `cato_group` provider resource only (provider `1.5.0-prerelease.1`+).
 No wrapper module and no CLI/python provisioners: a plain `for_each` over
 `groups.json`, inline in `main.tf` — identical resource block to the one
-`1-dependencies/main.tf` carried before the split.
+`0-dependencies/main.tf` carried before the split.
 
 Conventions (shared with every other bulk folder in this repo):
 - **State is indexed by name** — `for_each` is keyed by the group's name, so
@@ -30,7 +30,7 @@ The folder reads one JSON configuration file from the shared `../config_data/` d
 ### Basic Example
 
 ```bash
-cd 2-groups
+cd 3-groups
 cp terraform.tfvars.example terraform.tfvars   # fill in token + account id (gitignored)
 terraform init
 terraform plan
@@ -48,7 +48,7 @@ terraform apply -parallelism=1   # Cato API requires sequential execution
 - `members[].type` — one of `FLOATING_SUBNET`, `GLOBAL_IP_RANGE`, `HOST`, `NETWORK_INTERFACE`, `SITE`, `SITE_NETWORK_SUBNET`.
 - `members[]` carries **both `id` and `name`**: the provider resolves by `id` when both are set (id wins), and `name` rides along so these configs become tenant-portable once name-based resolution ships for the member types that are id-only today (`FLOATING_SUBNET`, `HOST`, `NETWORK_INTERFACE`, `SITE_NETWORK_SUBNET`).
 - `cato_group` requires ≥1 member — a zero-member group cannot be managed here.
-- Live groups in this account are **site-scoped** (`SITE` / `SITE_NETWORK_SUBNET` members), which is why this folder deploys after `0-sites/` in the repo's fixed order — a group member referencing a site that doesn't exist yet fails.
+- Live groups in this account are **site-scoped** (`SITE` / `SITE_NETWORK_SUBNET` members), which is why this folder deploys after `1-sites/` in the repo's fixed order — a group member referencing a site that doesn't exist yet fails.
 
 ## Authentication
 
@@ -98,16 +98,16 @@ catocli query groups group members '{"groupMembersListInput":{"filter":[],"pagin
 `migration.tf` performs the one-shot adoption declaratively — no per-object `terraform import` commands needed:
 
 - An `import` block adopts every group, keyed by the `id` in `groups.json`.
-- The companion handover lives on the `1-dependencies/` side: a one-shot
-  `1-dependencies/migration-groups-handover.tf` carries the `removed` block
+- The companion handover lives on the `0-dependencies/` side: a one-shot
+  `0-dependencies/migration-groups-handover.tf` carries the `removed` block
   (`destroy = false`) that forgets `cato_group.this` from that folder's state
   **without** deleting the live groups — see that file's header comment.
 
-After the first successful apply here (and in `1-dependencies/`), both
+After the first successful apply here (and in `0-dependencies/`), both
 one-shot migration files can be deleted — import/removed blocks are no-ops
 once state matches.
 
-### Typical Brownfield Workflow (handover from 1-dependencies)
+### Typical Brownfield Workflow (handover from 0-dependencies)
 
 1. **Export the current groups:**
    ```bash
@@ -116,7 +116,7 @@ once state matches.
 
 2. **Plan this folder — expect imports only:**
    ```bash
-   cd 2-groups && terraform plan
+   cd 3-groups && terraform plan
    ```
    A clean adoption shows `Plan: N to import, 0 to add, 0 to change, 0 to destroy.` Any "change" means the JSON is stale relative to the live tenant — **re-export rather than letting Terraform "fix" live objects to match an old backup.**
 
@@ -125,7 +125,7 @@ once state matches.
    terraform apply -parallelism=1
    ```
 
-4. **Then plan/apply `1-dependencies/`** to run its `removed` block — expect `Plan: 0 to add, 0 to change, 0 to destroy` there (a pure forget, no API calls against the groups themselves).
+4. **Then plan/apply `0-dependencies/`** to run its `removed` block — expect `Plan: 0 to add, 0 to change, 0 to destroy` there (a pure forget, no API calls against the groups themselves).
 
 5. **Verify:** `terraform plan` → `No changes.` in both folders.
 
@@ -139,7 +139,7 @@ If unintended changes are made directly in the Cato Management Application:
 ## Tenant-to-Tenant Migration
 
 - Export from the source tenant with `--strip-ids` to drop tenant-specific IDs, then apply to the target tenant (skip `migration.tf` — greenfield there).
-- Group members referencing `FLOATING_SUBNET` / `HOST` / `NETWORK_INTERFACE` / `SITE_NETWORK_SUBNET` are id-bound today (all other member types are referenced by name already); until the provider's name-based member resolution lands for those types, their member ids must be re-resolved in the target tenant (`catocli query entityLookup` by name/type). In this account's live data, members are site-scoped (`SITE_NETWORK_SUBNET` by id, `SITE` by name) — apply this folder only after the target's `0-sites/` has been adopted/created.
+- Group members referencing `FLOATING_SUBNET` / `HOST` / `NETWORK_INTERFACE` / `SITE_NETWORK_SUBNET` are id-bound today (all other member types are referenced by name already); until the provider's name-based member resolution lands for those types, their member ids must be re-resolved in the target tenant (`catocli query entityLookup` by name/type). In this account's live data, members are site-scoped (`SITE_NETWORK_SUBNET` by id, `SITE` by name) — apply this folder only after the target's `1-sites/` has been adopted/created.
 
 ## Requirements
 

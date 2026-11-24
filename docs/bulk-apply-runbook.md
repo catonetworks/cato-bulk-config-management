@@ -25,10 +25,10 @@ demand an interactive typed confirmation of the resolved target account id.
 
 **Step 7 moved ahead of step 8** (previously ran after apply) — 11 policy
 families resolve `usersGroup`/`user` names at apply time (see § SCIM gate
-below), so the push must land before `3-policies/*` applies, not after.
+below), so the push must land before `4-policies/*` applies, not after.
 `bulk_apply.py` reinforces this with a one-line reminder printed in apply
-mode right before the first `3-policies/*` folder runs — it's an advisory
-gate, not an enforced pause, since all 21 folders apply in one invocation;
+mode right before the first `4-policies/*` folder runs — it's an advisory
+gate, not an enforced pause, since all 22 folders apply in one invocation;
 doing step 7 before step 8 is what actually satisfies it.
 
 Steps 1 and 9's `catocli export all` requires the catocli release that ships
@@ -37,12 +37,12 @@ Steps 1 and 9's `catocli export all` requires the catocli release that ships
 
 ## Folder order (what bulk_apply.py enforces)
 
-`1-dependencies` → `0-sites` → `2-groups` → all `3-policies/*` policy folders
+`0-dependencies` → `1-sites` → `2-app-connectors` → `3-groups` → all `4-policies/*` policy folders
 (alphabetical — they are independent of each other, but all reference objects owned by
-the first three). `2-groups` sits between `0-sites` and `3-policies/*` because group
+the first three). `3-groups` sits between `1-sites` and `4-policies/*` because group
 members in this account are site-scoped (`SITE`/`SITE_NETWORK_SUBNET`); it was split out
-of `1-dependencies` on 2026-11-06 specifically so its folder-number wouldn't misstate the
-real dependency order (`1-dependencies`' own objects have no such site dependency). All
+of `0-dependencies` on 2026-11-06 specifically so its folder-number wouldn't misstate the
+real dependency order (`0-dependencies`' own objects have no such site dependency). All
 terraform commands run `-parallelism=1` (API rate behavior, repo convention).
 Stop-on-first-failure: a failed folder halts the run; fix, then resume with
 `--start-at <folder>`.
@@ -55,7 +55,7 @@ for non-empty `integration[]` arrays on every plan and apply against a target te
 prints the referenced webhook/integration names — e.g. this account's `ServiceNow -
 Create`, `ServiceNow - Update`, `Slack SOC IR - Create`. This is a **warning, never a
 refusal**: `bulk_apply.py` cannot create or verify webhooks itself. Create them by hand
-in the target CMA before `1-dependencies`' apply reaches `cato_subscription_group.this`
+in the target CMA before `0-dependencies`' apply reaches `cato_subscription_group.this`
 (step 8 above), or the subscription-group create will fail loudly against a name that
 doesn't resolve. Once `webhooks.json` exists (post catocli `export webhooks`),
 `scripts/validate_config_data.py` cross-checks these names automatically (§ Validator
@@ -65,7 +65,7 @@ below).
 
 11 policy families resolve `usersGroup`/`user` names at apply time: `ao`, `apc`, `atr`,
 `cc`, `dia`, `ifw`, `pa`, `st`, `tls`, `wf`, `wnw`. `bulk_apply.py` prints a one-line
-reminder in apply mode, right before the first `3-policies/*` folder in the run, but
+reminder in apply mode, right before the first `4-policies/*` folder in the run, but
 cannot verify target SCIM state itself (no API calls from this script) — it's an
 advisory gate. The actual gate is operational: run step 7 (SCIM push) before step 8
 (apply), per the one-page sequence above. `scripts/validate_config_data.py` also
@@ -91,11 +91,11 @@ allocations get new IPs. The cross-tenant identity of an allocation is
 `(pop_location_name, description)` (the validator enforces that pair's uniqueness in
 `allocated_ips.json`). In apply/deploy mode against a target, `bulk_apply.py`:
 
-1. applies `1-dependencies` (which creates the target's allocations via the new
+1. applies `0-dependencies` (which creates the target's allocations via the new
    `cato_allocated_ip` resource, state-keyed by the SOURCE display name);
-2. right before the first allocationIp-referencing folder (`3-policies/wan-network`,
+2. right before the first allocationIp-referencing folder (`4-policies/wan-network`,
    the only family with such refs today — see `ALLOCATED_IP_REMAP` in the script),
-   runs `scripts/remap_allocated_ips.py`, which reads `1-dependencies`' `allocated_ip_map`
+   runs `scripts/remap_allocated_ips.py`, which reads `0-dependencies`' `allocated_ip_map`
    output (source name → target name) and stages rewritten policy JSONs under the
    gitignored `config_data/.remapped/`;
 3. points the folder at the staged copy via its `TF_VAR_wnw_rules_json_file_path`
@@ -140,7 +140,7 @@ cross-file name integrity, import-id presence):
 The same folders serve two different jobs:
 
 **Against <source-profile> (source, brownfield)** — plans are a *health check*:
-state-owning folders must read `No changes.`; `1-dependencies`/`0-sites`
+state-owning folders must read `No changes.`; `0-dependencies`/`1-sites`
 read `N to import, 0 add/change/destroy` until their one-shot
 `migration.tf` adoption is applied. Any unexpected "change" means the JSON
 export is stale — re-export (step 1), never apply the diff onto <source-profile>.
@@ -177,7 +177,7 @@ cleanly:
 - DLP content/EDM profiles + `userNotification` (apc) — no provider resource.
 - `wnw` `allocatedIp` and `popLocation` — tenant-assigned/network-topology values, not
   replicated objects.
-- Mailing-list `admin` refs — id-only, re-resolved manually (see `1-dependencies/README.md`
+- Mailing-list `admin` refs — id-only, re-resolved manually (see `0-dependencies/README.md`
   § Tenant-to-Tenant Migration).
 - Webhooks — see § Webhook manual gate above.
 - Built-in catalog objects (`application`, `appCategory`, `systemGroup`, `service`,
@@ -204,7 +204,7 @@ custom SCIM connector (`catocli scim import`). Users import before groups
 Export the **target** tenant and diff against `config_data/`. Expected
 residual diffs on a fresh target: object ids (target-assigned), system
 default rules the purge skipped, and the known export omissions documented
-in `0-sites/README.md`. Anything else is a replication gap — fix the JSON or
+in `1-sites/README.md`. Anything else is a replication gap — fix the JSON or
 the module, re-plan, re-apply.
 
 ## Rehearsal discipline

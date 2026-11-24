@@ -15,7 +15,7 @@ Cato site resources for every site type this account uses, split across one Terr
 
 Physical socket sites still get the full, deep-build module — that part is unchanged. The `<target-profile>` account currently has 4 socket sites live, exported to the shared repo-root `config_data/socket_sites.json` — this is a brownfield folder, like the policy folders. The other three types are newer, lighter-weight **placeholder** builds (see "Site types" below) driven from their own JSON files; each is optional — if its JSON file doesn't exist, that file's `for_each` is empty and the plan is clean.
 
-**Export** runs from the **repo root** (catocli's default `--output-directory` is `config_data`, so running from root lands the file in the right place with no extra flags). **Import and Terraform commands** run from **this folder** (`0-sites/`), one level below the shared repo-root `config_data/`.
+**Export** runs from the **repo root** (catocli's default `--output-directory` is `config_data`, so running from root lands the file in the right place with no extra flags). **Import and Terraform commands** run from **this folder** (`1-sites/`), one level below the shared repo-root `config_data/`.
 
 ## Site types
 

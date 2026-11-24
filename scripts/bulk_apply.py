@@ -515,10 +515,19 @@ def main():
                     "greenfield. Clear or set each folder's state aside first.")
 
     if not args.skip_validate:
-        log("gate: scripts/validate_config_data.py")
-        result = run([sys.executable, os.path.join(REPO_ROOT, "scripts", "validate_config_data.py"),
-                      "--config-data", config_dir],
-                     REPO_ROOT, os.environ.copy())
+        validate_cmd = [sys.executable, os.path.join(REPO_ROOT, "scripts", "validate_config_data.py"),
+                        "--config-data", config_dir]
+        # Greenfield target (non-source tenant, every selected migration.tf
+        # parked): no import block will run, so a --strip-ids export's missing
+        # source-tenant ids are expected, not errors. Without this the documented
+        # greenfield path (export all --strip-ids -> bulk_apply) fails its own
+        # validation gate with one "missing id" ERROR per object.
+        greenfield = (not is_source and not any(
+            os.path.exists(os.path.join(REPO_ROOT, f, "migration.tf")) for f in folders))
+        if greenfield:
+            validate_cmd.append("--greenfield")
+        log("gate: scripts/validate_config_data.py" + (" --greenfield" if greenfield else ""))
+        result = run(validate_cmd, REPO_ROOT, os.environ.copy())
         if result.returncode != 0:
             log("ABORT: config_data validation failed (ERROR severity). Fix exports first.")
             return 1
@@ -546,6 +555,12 @@ def main():
     # Point every folder's config_data_dir variable at the resolved (absolute)
     # config dir, so --config-dir redirects all the folders' file() reads.
     env["TF_VAR_config_data_dir"] = config_dir
+    # wan-network and remote-port-forward read their files through their own
+    # *_json_file_path variables (repo-relative defaults), NOT config_data_dir,
+    # so without these --config-dir silently did not redirect those two folders.
+    env["TF_VAR_wnw_rules_json_file_path"] = os.path.join(config_dir, "all_wnw_rules_and_sections.json")
+    env["TF_VAR_rpf_rules_json_file_path"] = os.path.join(config_dir, "all_rpf_rules_and_sections.json")
+    env["TF_VAR_allocated_ips_json_file_path"] = os.path.join(config_dir, "allocated_ips.json")
     if args.mode in ("plan", "deploy", "destroy"):
         # The provider's cleanupDrafts fires a policyPrivateAccessDiscardRevision
         # mutation on first Configure (see docs/release-instructions.md) -- it can
@@ -611,7 +626,7 @@ def main():
         log(f"\n=== {folder} ({args.mode}) ===")
 
         if args.mode in ("plan", "deploy"):
-            if args.mode == "deploy" and args.mirror:
+            if args.mirror:  # plan AND deploy: a lock from the registry build never matches a local build
                 # Only when exercising a LOCAL provider build (--mirror): a
                 # rebuild changes the binary hash, so every folder's committed
                 # .terraform.lock.hcl (pinned to the same version) no longer

@@ -12,7 +12,10 @@ locals {
 }
 
 resource "cato_allocated_ip" "this" {
-  for_each = { for a in local.allocated_ips : a.name => a }
+  # var.allocated_ips_exclude: per-target opt-out by source display name, e.g.
+  # allocations on PoPs the target is not entitled to (China PoPs) or beyond
+  # the target's allocated-IP licence.
+  for_each = { for a in local.allocated_ips : a.name => a if !contains(var.allocated_ips_exclude, a.name) }
 
   pop_location_name = each.value.popLocation.name
   description       = try(each.value.description, null)

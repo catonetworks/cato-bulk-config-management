@@ -15,6 +15,9 @@ module "swp_rules" {
   # version = "0.0.1"
 
   swp_rules_json_file_path = "${var.config_data_dir}/all_swp_rules_and_sections.json"
+
+  # Carry the source policy's on/off state across (null = leave unmanaged).
+  policy_enabled = try(one(values(jsondecode(file("${var.config_data_dir}/all_swp_rules_and_sections.json")).data.policy)).policy.enabled, null)
   # Site Web Proxy policy is empty in this account (0 rules); allow the empty
   # policy so the guard doesn't block plan/apply. No cato_swpRulesIndex data
   # source exists, so the dynamic (no-flag) guard used for IFW isn't available here.

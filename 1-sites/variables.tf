@@ -22,3 +22,9 @@ variable "config_data_dir" {
   type        = string
   default     = "../config_data"
 }
+
+variable "ipsec_sites_exclude" {
+  description = "IPSec site names from ipsec_sites.json to leave out on THIS target (e.g. sites that terminate on PoPs the target is not entitled to). Default: none."
+  type        = list(string)
+  default     = []
+}

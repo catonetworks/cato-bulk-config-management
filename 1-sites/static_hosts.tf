@@ -13,7 +13,14 @@ locals {
   # in a target tenant. Scoping the for_each here guarantees we never attempt a
   # host for a site we aren't deploying (defense-in-depth alongside the catocli
   # export's --site-type physical filter).
-  managed_site_names   = toset([for s in jsondecode(file("${var.config_data_dir}/socket_sites.json")).sites : s.name])
+  # Socket sites plus the vSocket placeholder sites, whose LAN ranges are now
+  # built by vsocket_network_ranges.tf (63 of Reference Arch's 78 static hosts
+  # live on vSocket sites; export them with `catocli export static_hosts
+  # --site-type all`).
+  managed_site_names = toset(concat(
+    [for s in jsondecode(file("${var.config_data_dir}/socket_sites.json")).sites : s.name],
+    [for s in local.vsocket_sites_data : s.name],
+  ))
   all_static_hosts     = jsondecode(file("${var.config_data_dir}/static_hosts.json"))
   static_hosts         = [for h in local.all_static_hosts : h if contains(local.managed_site_names, h.site_name)]
   skipped_static_hosts = [for h in local.all_static_hosts : "${h.site_name}:${h.name}" if !contains(local.managed_site_names, h.site_name)]
@@ -29,7 +36,7 @@ resource "cato_static_host" "this" {
   # resolves via entityLookup at apply -- that gives no implicit edge to the
   # sites/ranges, so the hosts would otherwise be created before the ranges'
   # DHCP is applied (and before the sites exist). Force the ordering.
-  depends_on = [module.sites]
+  depends_on = [module.sites, cato_network_range.vsocket]
 
   # Reference the parent site by name; the provider resolves it to the live
   # site id (via entityLookup) and writes site_id back to state. Portable across

@@ -11,7 +11,9 @@ module "wnw_rules" {
   # Local dev override (uncomment to use a local module clone):
   # source = "../../../../catonetworks/terraform-cato-bulk-wnw-rules"
   wnw_rules_json_file_path = var.wnw_rules_json_file_path
-  allow_empty_policy       = true
+  # Carry the source policy's on/off state across (null = leave unmanaged).
+  policy_enabled     = try(one(values(jsondecode(file(var.wnw_rules_json_file_path)).data.policy)).policy.enabled, null)
+  allow_empty_policy = true
   # Dynamic allocated-IP resolution by (description, popLocation) -- see
   # allocated_ip_resolution.tf. Replaces the scripts/remap_allocated_ips.py
   # staging-copy flow for this family.

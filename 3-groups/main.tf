@@ -36,14 +36,36 @@ locals {
   ))
   site_scoped_types = ["SITE", "SITE_NETWORK_SUBNET", "HOST", "NETWORK_INTERFACE", "FLOATING_SUBNET"]
 
+  # Static hosts that 1-sites builds on vSocket placeholder sites, as
+  # "<site>|<host>". A HOST member "<site> \ <interface> \ <host>" on one of
+  # those sites is satisfiable when the host itself is built.
+  placeholder_site_host_keys = toset([
+    for h in try(jsondecode(file("${var.config_data_dir}/static_hosts.json")), []) : "${h.site_name}|${h.name}"
+    if contains(local.placeholder_site_names, h.site_name)
+  ])
+
+  # Ranges that 1-sites/vsocket_network_ranges.tf builds INSIDE the vSocket
+  # placeholder sites, by their CMA name "<site> \ <interface> \ <range>". A
+  # SITE_NETWORK_SUBNET member naming one of these is satisfiable even though
+  # the site itself is only a placeholder.
+  placeholder_site_subnet_names = toset(flatten([
+    for s in try(jsondecode(file("${var.config_data_dir}/vsocket_sites.json")).sites, []) : [
+      for nr in flatten([for li in try(s.lan_interfaces, []) : try(li.network_ranges, [])]) :
+      "${s.name} \\ ${try(nr.interface_index, s.native_range.interface_name)} \\ ${nr.name}"
+    ]
+  ]))
+
   group_deployable = {
     for g in local.groups_all : g.name => alltrue([
       for m in try(g.members, []) :
       !contains(local.site_scoped_types, m.type) ? true : (
         # member's owning site
         contains(local.managed_socket_site_names, split(" \\ ", try(m.name, ""))[0]) ||
-        # placeholder site: only a whole-SITE reference is satisfiable
-        (m.type == "SITE" && contains(local.placeholder_site_names, try(m.name, "")))
+        # placeholder site: a whole-SITE reference, or a subnet that
+        # 1-sites/vsocket_network_ranges.tf builds inside it
+        (m.type == "SITE" && contains(local.placeholder_site_names, try(m.name, ""))) ||
+        (m.type == "SITE_NETWORK_SUBNET" && contains(local.placeholder_site_subnet_names, try(m.name, ""))) ||
+        (m.type == "HOST" && contains(local.placeholder_site_host_keys, "${split(" \\ ", try(m.name, ""))[0]}|${replace(element(split(" \\ ", try(m.name, "")), length(split(" \\ ", try(m.name, ""))) - 1), "/ \\([^)]*\\)$/", "")}"))
       )
     ])
   }

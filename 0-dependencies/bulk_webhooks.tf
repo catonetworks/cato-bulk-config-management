@@ -15,8 +15,12 @@
 # carries the actual auth secret.
 
 locals {
-  webhooks       = jsondecode(file("${var.config_data_dir}/webhooks.json"))
-  webhooks_by_id = { for w in local.webhooks : w.id => w.name }
+  webhooks = jsondecode(file("${var.config_data_dir}/webhooks.json"))
+  # try(): a `catocli export all --strip-ids` capture has no webhook ids. Only
+  # an id-bearing export (scripts/export_webhooks.py) can resolve
+  # relatedWebhookId to a name; without ids the related link is dropped (null)
+  # rather than failing the whole folder's plan with "Unsupported attribute".
+  webhooks_by_id = { for w in local.webhooks : w.id => w.name if try(w.id, null) != null }
 
   # Webhook NAMES (keys) are not secret -- nonsensitive() lets them be used in
   # expressions driving resource arguments; only the auth VALUES stay sensitive.
@@ -71,7 +75,7 @@ resource "cato_webhook" "this" {
   # provider resolves it on the target. The referenced webhook is created in the
   # same apply; if it isn't resolved yet on first create, a single convergence
   # re-apply wires it.
-  related_webhook_ref = try(each.value.relatedWebhookId, null) != null ? {
+  related_webhook_ref = try(local.webhooks_by_id[each.value.relatedWebhookId], null) != null ? {
     by    = "NAME"
     input = local.webhooks_by_id[each.value.relatedWebhookId]
   } : null

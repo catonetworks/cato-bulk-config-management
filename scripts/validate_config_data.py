@@ -174,10 +174,26 @@ ALERT_REF_KEYS = {
 
 
 class Report:
-    def __init__(self):
+    def __init__(self, greenfield=False):
         self.errors = []
         self.warnings = []
         self.infos = []
+        # Greenfield mode: the dataset is a `catocli export all --strip-ids`
+        # capture headed for an EMPTY target, so migration.tf stays parked and
+        # no import block will ever read these ids. Missing import ids are then
+        # expected (they are stripped on purpose), not an error.
+        self.greenfield = greenfield
+        self.missing_import_ids = 0
+
+    def missing_import_id(self, msg):
+        """A missing id that only a migration.tf import block would need.
+
+        ERROR for brownfield adoption (the import block cannot be built without
+        it); counted and summarised as one INFO line in greenfield mode."""
+        if self.greenfield:
+            self.missing_import_ids += 1
+        else:
+            self.errors.append(msg)
 
     def error(self, msg):
         self.errors.append(msg)
@@ -192,6 +208,11 @@ class Report:
         return not self.errors
 
     def render(self):
+        if self.greenfield and self.missing_import_ids:
+            self.infos.insert(0,
+                f"greenfield mode: {self.missing_import_ids} object(s) have no source-tenant id "
+                f"(expected for a --strip-ids export; only migration.tf import blocks need ids, "
+                f"and those stay parked for a greenfield apply)")
         lines = []
         lines.append("=" * 72)
         lines.append("config_data validation report")
@@ -454,13 +475,18 @@ def check_dependency_list(report, directory, filename, required_keys, id_keys=No
             report.error(f"{filename}: item[{i}] is not an object")
             continue
         for key in required_keys:
+            # An empty members list is legitimate: the API accepts a group with
+            # no members (it matches nothing), and source tenants do have them.
+            # Only a missing/non-list members key is structurally broken.
+            if key == "members" and isinstance(item.get(key), list):
+                continue
             if not item.get(key):
                 report.error(f"{filename}: item[{i}] (name={item.get(name_key)!r}) missing required key {key!r}")
         if id_keys:
             for key in id_keys:
                 if not item.get(key):
-                    report.error(f"{filename}: item[{i}] (name={item.get(name_key)!r}) missing id field {key!r} "
-                                 f"needed for a migration.tf import block")
+                    report.missing_import_id(f"{filename}: item[{i}] (name={item.get(name_key)!r}) missing id field {key!r} "
+                                             f"needed for a migration.tf import block")
         nm = item.get(name_key)
         if nm:
             seen_names.append(nm)
@@ -626,8 +652,8 @@ def check_app_connectors(report, directory):
                 report.error(f"{APP_CONNECTORS_FILE}: connectors[{i}] "
                              f"(name={item.get('name')!r}) missing required key {key!r}")
         if not item.get("id"):
-            report.error(f"{APP_CONNECTORS_FILE}: connectors[{i}] (name={item.get('name')!r}) "
-                         f"missing id field needed for a migration.tf import block")
+            report.missing_import_id(f"{APP_CONNECTORS_FILE}: connectors[{i}] (name={item.get('name')!r}) "
+                                     f"missing id field needed for a migration.tf import block")
         if item.get("name"):
             names.append(item["name"])
     for n, c in Counter(names).items():
@@ -695,7 +721,7 @@ def check_static_hosts(report, directory, site_names):
                 report.error(f"{STATIC_HOSTS_FILE}: item[{i}] missing required key {key!r}")
         for key in ("id", "site_id"):
             if not item.get(key):
-                report.error(
+                report.missing_import_id(
                     f"{STATIC_HOSTS_FILE}: item[{i}] (name={item.get('name')!r}) missing id field {key!r} "
                     f"needed for a migration.tf import block"
                 )
@@ -733,8 +759,8 @@ def check_socket_sites(report, directory):
             continue
         sname = site.get("name")
         if not site.get("id"):
-            report.error(f"{SOCKET_SITES_FILE}: sites[{i}] (name={sname!r}) missing 'id' "
-                         f"needed for a migration.tf import block")
+            report.missing_import_id(f"{SOCKET_SITES_FILE}: sites[{i}] (name={sname!r}) missing 'id' "
+                                     f"needed for a migration.tf import block")
         if not sname:
             report.error(f"{SOCKET_SITES_FILE}: sites[{i}] missing 'name'")
         else:
@@ -743,7 +769,7 @@ def check_socket_sites(report, directory):
 
         for wi, wifi in enumerate(site.get("wifi_ssids") or []):
             if not isinstance(wifi, dict) or not wifi.get("id"):
-                report.error(
+                report.missing_import_id(
                     f"{SOCKET_SITES_FILE}: sites[{i}] (name={sname!r}) wifi_ssids[{wi}] missing 'id' "
                     f"needed for a migration.tf import block"
                 )
@@ -805,10 +831,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-data", "--config-dir", dest="config_data",
                         default=DEFAULT_CONFIG_DATA, help="path to config_data/ directory")
+    parser.add_argument("--greenfield", action="store_true",
+                        help="dataset is a --strip-ids export for an EMPTY target tenant: "
+                             "missing source-tenant ids (only needed by migration.tf import "
+                             "blocks, which stay parked for greenfield) are reported as one "
+                             "INFO line instead of an ERROR per object")
     args = parser.parse_args()
     directory = args.config_data
 
-    report = Report()
+    report = Report(greenfield=args.greenfield)
 
     if not os.path.isdir(directory):
         report.error(f"config_data directory not found: {directory}")

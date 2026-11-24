@@ -10,7 +10,12 @@
 # when no tunnels are defined yet.
 
 locals {
-  ipsec_sites_data = try(jsondecode(file("${var.config_data_dir}/ipsec_sites.json")).sites, [])
+  # var.ipsec_sites_exclude: per-target opt-out by site name (e.g. a site whose
+  # PoP allocations the target cannot have, such as China PoPs).
+  ipsec_sites_data = [
+    for s in try(jsondecode(file("${var.config_data_dir}/ipsec_sites.json")).sites, []) : s
+    if !contains(var.ipsec_sites_exclude, s.name)
+  ]
 }
 
 resource "cato_ipsec_site" "this" {

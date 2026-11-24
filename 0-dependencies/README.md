@@ -1,11 +1,11 @@
-# 1-dependencies — Bulk Dependency Objects (IP Ranges, Custom Apps, Containers, Notification Recipients, Webhooks, DHCP Relay Groups)
+# 0-dependencies — Bulk Dependency Objects (IP Ranges, Custom Apps, Containers, Notification Recipients, Webhooks, DHCP Relay Groups)
 
-This folder bulk-manages eight of the nine dependency object types that the policy folders (`3-policies/*`) reference by name but don't own — **Global IP Ranges**, **Custom Applications**, **FQDN Containers**, **IP Address Range Containers**, **Mailing Lists**, **Subscription Groups**, **Webhooks**, and **DHCP Relay Groups** — from JSON configuration files, using native `cato` provider resources only (provider `1.5.0-prerelease.1`+, which introduced the custom-application, container, mailing-list, and subscription-group resources; `1.5.0-prerelease.3` added the `cato_webhook` resource). No wrapper modules and no CLI/python provisioners: each type is a plain `for_each` (or singleton) over its JSON file, inline in `main.tf`.
+This folder bulk-manages eight of the nine dependency object types that the policy folders (`4-policies/*`) reference by name but don't own — **Global IP Ranges**, **Custom Applications**, **FQDN Containers**, **IP Address Range Containers**, **Mailing Lists**, **Subscription Groups**, **Webhooks**, and **DHCP Relay Groups** — from JSON configuration files, using native `cato` provider resources only (provider `1.5.0-prerelease.1`+, which introduced the custom-application, container, mailing-list, and subscription-group resources; `1.5.0-prerelease.3` added the `cato_webhook` resource). No wrapper modules and no CLI/python provisioners: each type is a plain `for_each` (or singleton) over its JSON file, inline in `main.tf`.
 
-**Groups moved to [`../2-groups/`](../2-groups/)** on 2026-11-06: live group members in this
+**Groups moved to [`../3-groups/`](../3-groups/)** on 2026-11-06: live group members in this
 account are site-scoped (`SITE`/`SITE_NETWORK_SUBNET`), so groups must deploy
-*after* `0-sites/` rather than alongside these tenant-wide dependency types,
-which have no such ordering constraint. See `1-dependencies/migration-groups-handover.tf`
+*after* `1-sites/` rather than alongside these tenant-wide dependency types,
+which have no such ordering constraint. See `0-dependencies/migration-groups-handover.tf`
 for the one-shot state handover and CLAUDE.md's Structure section for the
 full deployment-order rationale.
 
@@ -13,7 +13,7 @@ Conventions (apply to every type here):
 - **State is indexed by name** — every `for_each` is keyed by the object's name, so addresses stay stable across greenfield creation, brownfield import, and tenant-to-tenant migration.
 - **Attributes reference related objects by name**, not ID, wherever the provider resolves names (subscription-group → mailing-list refs). IDs appear only in import blocks and for the admin types that cannot resolve by name yet.
 
-Account: **<target-profile> (<account-id>)**. Live inventory at adoption time: 9 global IP ranges, 13 custom applications, 2 FQDN containers, 1 IP range container, 1 mailing list, 4 subscription groups, 0 DHCP relay groups (22 objects; 4 groups now live in `../2-groups/`).
+Account: **<target-profile> (<account-id>)**. Live inventory at adoption time: 9 global IP ranges, 13 custom applications, 2 FQDN containers, 1 IP range container, 1 mailing list, 4 subscription groups, 0 DHCP relay groups (22 objects; 4 groups now live in `../3-groups/`).
 
 ## Usage
 
@@ -31,7 +31,7 @@ The folder reads eight JSON configuration files from the shared `../config_data/
 ### Basic Example
 
 ```bash
-cd 1-dependencies
+cd 0-dependencies
 cp terraform.tfvars.example terraform.tfvars   # fill in token + account id (gitignored)
 terraform init
 terraform plan
@@ -40,7 +40,7 @@ terraform apply -parallelism=1   # Cato API requires sequential execution
 
 ### JSON Configuration Structure
 
-All files but one are top-level JSON arrays, refreshed from the live tenant via `catocli export` (see Brownfield section) — `app_connectors.json` is `{connectors[], groups[]}`. (`groups.json` moved to `../2-groups/README.md`.) The 2026-11-10 additions: `allocated_ips.json` (PoP allocated IPs — Cato assigns the ip, so targets get NEW ips and policy `allocationIp` refs are remapped at deploy time by `../scripts/remap_allocated_ips.py`), `private_applications.json`, and `app_connectors.json` (connector groups are created implicitly via each connector's `group_name`).
+All files but one are top-level JSON arrays, refreshed from the live tenant via `catocli export` (see Brownfield section) — `app_connectors.json` is `{connectors[], groups[]}`. (`groups.json` moved to `../3-groups/README.md`.) The 2026-11-10 additions: `allocated_ips.json` (PoP allocated IPs — Cato assigns the ip, so targets get NEW ips and policy `allocationIp` refs are remapped at deploy time by `../scripts/remap_allocated_ips.py`), `private_applications.json`, and `app_connectors.json` (connector groups are created implicitly via each connector's `group_name`).
 
 #### Key Fields
 
@@ -101,7 +101,7 @@ For brownfield tenants where these objects already exist in the Cato Management 
 
 ### Exporting Existing Objects
 
-Run from the repo root (requires catocli with the `global_ip_ranges` / `custom_apps` export subcommands; `catocli export groups` now feeds `../2-groups/`):
+Run from the repo root (requires catocli with the `global_ip_ranges` / `custom_apps` export subcommands; `catocli export groups` now feeds `../3-groups/`):
 
 ```bash
 catocli export global_ip_ranges    --json-filename config_data/global_ip_ranges.json
@@ -139,7 +139,7 @@ Note: the API key needs sufficient permissions for `customAppData` — a view-on
 
 After the first successful apply, `migration.tf` can be deleted — import/removed blocks are no-ops once state matches.
 
-A separate, newer one-shot file, `migration-groups-handover.tf`, forgets `cato_group.this` from this folder's state (`destroy = false` — the live groups aren't touched) so `../2-groups/` can adopt them into its own state. Apply `../2-groups/` first (or in the same session), then this folder.
+A separate, newer one-shot file, `migration-groups-handover.tf`, forgets `cato_group.this` from this folder's state (`destroy = false` — the live groups aren't touched) so `../3-groups/` can adopt them into its own state. Apply `../3-groups/` first (or in the same session), then this folder.
 
 ### Typical Brownfield Workflow
 
@@ -151,7 +151,7 @@ A separate, newer one-shot file, `migration-groups-handover.tf`, forgets `cato_g
 
 2. **Plan — expect imports only:**
    ```bash
-   cd 1-dependencies && terraform plan
+   cd 0-dependencies && terraform plan
    ```
    A clean adoption shows `Plan: N to import, 0 to add, 0 to change, 0 to destroy.` Any "change" means the JSON is stale relative to the live tenant — **re-export rather than letting Terraform "fix" live objects to match an old backup.**
 
@@ -175,7 +175,7 @@ If unintended changes are made directly in the Cato Management Application:
 - Global IP ranges, custom applications, both container types, and DHCP relay groups carry no cross-tenant references and migrate as-is. Subscription groups reference mailing lists and webhooks by name, so they migrate cleanly as long as those come along.
 - Mailing-list admin refs are id-only — re-resolve admin ids in the target tenant.
 - Webhooks migrate name-first: `related_webhook_ref` is resolved to the referenced webhook's name in `main.tf`, so it carries across tenants without rewriting. What does NOT migrate: auth secrets (never exported — supply a `webhook_secrets` entry per webhook in the target's tfvars) and, until the provider gains `NO_AUTH` support, any `NO_AUTH` webhook lands with the `webhook_default_auth` placeholder header in the target too.
-- Group migration (id-only member types, site-scoping) is documented in `../2-groups/README.md`.
+- Group migration (id-only member types, site-scoping) is documented in `../3-groups/README.md`.
 
 ## Requirements
 

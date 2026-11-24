@@ -50,7 +50,7 @@ Every other command below is read-only (exports, dry-runs, plans, lint).
 
 **Ordering note**: despite the diagram showing bulk_apply and SCIM push as parallel
 branches, `scim_sync.py push --execute` must complete **before** `bulk_apply.py`'s
-`--mode apply` run reaches any `3-policies/*` folder — 11 policy families resolve
+`--mode apply` run reaches any `4-policies/*` folder — 11 policy families resolve
 `usersGroup`/`user` names at apply time. See Part B below; `bulk_apply.py` prints a
 one-line reminder of this gate but cannot enforce or verify it itself.
 
@@ -94,7 +94,7 @@ Policy families go first (children of rules/sections before dependencies), then
 `custom_applications` → `groups` → `global_ip_ranges` → `dhcp_relay_groups`, because
 rules reference apps/groups/ranges and relay groups reference nothing. **Sites,
 network ranges, and static hosts are never touched by this engine** — they're
-Terraform-owned via `0-sites/`; destroy them with Terraform if that's ever needed.
+Terraform-owned via `1-sites/`; destroy them with Terraform if that's ever needed.
 SCIM users/groups are excluded unless you pass `--include-scim` (separate blast
 radius, runs last, shells `scim_sync.py purge` under the same profile).
 
@@ -317,7 +317,7 @@ folder, so every `terraform plan` against <test-profile> is pure creates.
 **Option 2 — move state aside in place** (if you must stay in the working repo):
 
 ```bash
-for d in 1-dependencies 0-sites 2-groups 3-policies/*; do
+for d in 0-dependencies 1-sites 3-groups 4-policies/*; do
   [ -f "$d/terraform.tfstate" ] && mv "$d/terraform.tfstate" "$d/terraform.tfstate.<source-profile>.bak"
   [ -f "$d/terraform.tfstate.backup" ] && mv "$d/terraform.tfstate.backup" "$d/terraform.tfstate.backup.<source-profile>.bak"
 done
@@ -347,8 +347,8 @@ python3 scripts/bulk_apply.py --profile <test-profile> --mode plan
 ```
 
 Runs `terraform init -upgrade` / `validate` / `plan -out=.bulk_plans/<folder>.tfplan`
-across all 21 folders in fixed order (`1-dependencies` → `0-sites` → `2-groups` → every
-`3-policies/*` folder alphabetically — `2-groups` sits after `0-sites` because its
+across all 22 folders in fixed order (`0-dependencies` → `1-sites` → `2-app-connectors` → `3-groups` → every
+`4-policies/*` folder alphabetically — `3-groups` sits after `1-sites` because its
 members are site-scoped), `-parallelism=1`, under a generated clean
 `TF_CLI_CONFIG_FILE` (`.bulk_plans/clean.tfrc`, registry `direct {}` only — forces the
 pinned registry provider version, not a local dev build). Sets
@@ -363,10 +363,10 @@ Useful scoping flags:
 
 ```bash
 # re-plan just one folder after fixing something
-python3 scripts/bulk_apply.py --profile <test-profile> --mode plan --folders 3-policies/internet-firewall
+python3 scripts/bulk_apply.py --profile <test-profile> --mode plan --folders 4-policies/internet-firewall
 
 # resume a stopped run partway through the sequence
-python3 scripts/bulk_apply.py --profile <test-profile> --mode plan --start-at 3-policies/lan-firewall
+python3 scripts/bulk_apply.py --profile <test-profile> --mode plan --start-at 4-policies/lan-firewall
 
 # preview what a purge of <test-profile> would do first (prints inventory only, never deletes)
 python3 scripts/bulk_apply.py --profile <test-profile> --mode plan --purge-first
@@ -386,9 +386,9 @@ Read the summary table printed at the end:
 ================================================================
 folder                       status             add  chg  del  imp
 ------------------------------------------------------------------
-1-dependencies               ok                  26    0    0    0
-0-sites                      ok                  88    0    0    0
-3-policies/always-on         ok                   4    0    0    0
+0-dependencies               ok                  26    0    0    0
+1-sites                      ok                  88    0    0    0
+4-policies/always-on         ok                   4    0    0    0
 ...
 ```
 
@@ -397,18 +397,18 @@ folder                       status             add  chg  del  imp
 greenfield target means the JSON in `config_data/` is stale or the target wasn't
 fully purged — re-export/re-purge, don't let Terraform apply a diff you don't
 understand. (Contrast with planning against <source-profile> itself, where state-owning
-folders should read `No changes.` and `1-dependencies`/`0-sites` show
+folders should read `No changes.` and `0-dependencies`/`1-sites` show
 `N to import, 0/0/0` until their `migration.tf` is applied — that's the brownfield
 case, not what you're doing here.) Also inspect the saved plans directly if you want
 full resource-level detail:
 
 ```bash
-terraform -chdir=3-policies/internet-firewall show .bulk_plans/3-policies__internet-firewall.tfplan
+terraform -chdir=4-policies/internet-firewall show .bulk_plans/3-policies__internet-firewall.tfplan
 ```
 
 **Webhook manual gate**: if B5 printed a `WARNING (webhook manual gate): ...` line, create
 the named webhooks/integrations in the target CMA now, before B8 (apply) reaches
-`1-dependencies`'s `cato_subscription_group.this` — webhooks have no Terraform provider
+`0-dependencies`'s `cato_subscription_group.this` — webhooks have no Terraform provider
 resource, so `bulk_apply.py` can only warn, not create or verify them. This account's
 subscription groups reference `ServiceNow - Create`, `ServiceNow - Update`, and `Slack
 SOC IR - Create`.
@@ -431,8 +431,8 @@ user). `push` and `purge` both refuse the source tenant outright (profile name
 **This step now runs before B8, not after** (moved 2026-11-06): 11 policy families
 (`ao`, `apc`, `atr`, `cc`, `dia`, `ifw`, `pa`, `st`, `tls`, `wf`, `wnw`) resolve
 `usersGroup`/`user` names at apply time, so the SCIM push must have landed before any
-`3-policies/*` folder applies. `bulk_apply.py` prints a one-line reminder of this gate
-right before the first `3-policies/*` folder in an apply run, but — since all 21 folders
+`4-policies/*` folder applies. `bulk_apply.py` prints a one-line reminder of this gate
+right before the first `4-policies/*` folder in an apply run, but — since all 22 folders
 apply in one invocation — the reminder is advisory, not an enforced pause; doing this
 step before B8 is what actually satisfies it.
 
@@ -483,11 +483,11 @@ diff -r config_data/ config_data_archive/   # or per-file, as in B1
 
 Expected residual diffs on a fresh target: object ids (target-assigned, not
 comparable across tenants), any system default rules the purge skipped, and the
-known export omissions documented in `0-sites/README.md` (fields the API read path
+known export omissions documented in `1-sites/README.md` (fields the API read path
 doesn't currently return at all, e.g. `lag_min_links`, `dhcp_type`, `ip_range`,
 `relay_group_id`/`relay_group_name`, `gateway`, `translated_subnet`,
 `internet_only`, `local_ip`, `range_type` — these must be hand-filled in the JSON
-before `0-sites/`'s first apply, independent of which tenant is the target). Anything
+before `1-sites/`'s first apply, independent of which tenant is the target). Anything
 else is a real replication gap — fix the JSON or the module, re-plan, re-apply.
 
 Also verify SCIM counts:
@@ -517,15 +517,15 @@ aren't owned by this repo at all, so no plan will ever surface them as a gap:
   `NETWORK_INTERFACE`, `SITE_NETWORK_SUBNET` group members are only addressable by id
   in the source tenant; name-based resolution doesn't exist for these types yet.
   Re-resolve each one's id on the target via `catocli entity entityLookup` before
-  `1-dependencies/` applies cleanly.
+  `0-dependencies/` applies cleanly.
 - **Mailing-list admin ids.** The provider's mailing-list admin reference requires an
   id; re-resolve each admin's id on the target the same way.
 - **Wi-Fi PSKs.** The API never returns Wi-Fi passkeys on export. Supply each one via
-  the `wifi_ssid_passkeys` Terraform variable in `0-sites/`, keyed by
+  the `wifi_ssid_passkeys` Terraform variable in `1-sites/`, keyed by
   `"<site name>:<ssid name>"` (e.g. `"Branch 1:Guest Wi-Fi"`).
 - **Licenses.** `license_id`/`license_bw` are source-tenant-specific; re-assign a
   license to each site on the target as part of onboarding, before or during
-  `0-sites/`'s apply.
+  `1-sites/`'s apply.
 - **Physical socket re-registration.** Terraform/JSON replication does not move
   hardware — every physical socket behind a replicated site must be physically
   re-registered against the target account with a new registration code.

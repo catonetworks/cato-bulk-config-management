@@ -63,3 +63,15 @@ variable "config_data_dir" {
   type        = string
   default     = "../config_data"
 }
+
+variable "global_ip_ranges_exclude" {
+  description = "Names from global_ip_ranges.json to leave out on THIS target (e.g. a 169.254.169.254 range the Cato API WAF rejects, created by hand instead). Default: none."
+  type        = list(string)
+  default     = []
+}
+
+variable "allocated_ips_exclude" {
+  description = "Source display names from allocated_ips.json to leave out on THIS target (e.g. PoPs the target is not entitled to, or more allocations than its licence allows). Default: none."
+  type        = list(string)
+  default     = []
+}
