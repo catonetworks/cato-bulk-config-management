@@ -29,11 +29,11 @@ version**:
 ```hcl
 cato = {
   source  = "catonetworks/cato"
-  version = "= 2.0.0-prerelease.1"
+  version = "= 2.0.0"
 }
 ```
 
-Version `2.0.0-prerelease.1` is **published to the public Terraform Registry**
+Version `2.0.0` is **published to the public Terraform Registry**
 and is resolved **directly from the registry** — there is **no filesystem
 mirror and no `dev_overrides`**. Because it is a pre-release, Terraform only
 selects it when a configuration pins it explicitly (which these folders do).

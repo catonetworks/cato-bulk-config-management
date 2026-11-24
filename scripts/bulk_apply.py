@@ -36,7 +36,7 @@ Safety model (see docs/bulk-apply-runbook.md):
     explicitly overriding any TF_VAR_* inherited from the shell.
   - by default terraform runs under a CLEAN CLI config (TF_CLI_CONFIG_FILE
     pointing at a generated file with no dev_overrides), so the provider
-    resolves the exact pinned version (currently 2.0.0-prerelease.1) straight
+    resolves the exact pinned version (currently 2.0.0) straight
     from the public Terraform Registry, rather than whatever dev_overrides your
     personal ~/.terraformrc happens to have pointed at. Pass
     --allow-dev-overrides to use your ~/.terraformrc as-is instead, or --mirror
@@ -114,7 +114,7 @@ SCIM_DEPENDENT_FAMILIES = [
     "ao", "apc", "atr", "cc", "dia", "ifw", "pa", "st", "tls", "wf", "wnw",
 ]
 
-# Default: resolve the PINNED provider version (currently 2.0.0-prerelease.1)
+# Default: resolve the PINNED provider version (currently 2.0.0)
 # straight from the public Terraform Registry, with no dev_overrides. That
 # version is PUBLISHED, so `direct {}` is authoritative -- no filesystem mirror
 # needed. The clean file still exists only to shadow any dev_overrides in the
@@ -334,7 +334,7 @@ def main():
                         help="opt into `terraform init -upgrade` in every mode (default is "
                              "NO -upgrade everywhere). Use when the committed "
                              ".terraform.lock.hcl pins an older provider version than the "
-                             "current config requires (e.g. after the 2.0.0-prerelease.1 "
+                             "current config requires (e.g. after the 2.0.0 "
                              "bump) -- -upgrade re-resolves the provider against the "
                              "versions.tf constraints and rewrites the lock, instead of "
                              "failing with 'no available releases match the given "
@@ -716,7 +716,7 @@ def main():
             if args.upgrade:
                 # Re-resolve the provider against current versions.tf constraints and
                 # rewrite a stale committed lock (e.g. one still pinning
-                # 1.5.0-prerelease.3 after the 2.0.0-prerelease.1 bump). Without this,
+                # 1.5.0-prerelease.3 after the 2.0.0 bump). Without this,
                 # a plain init fails with "no available releases match the given
                 # constraints" when the locked version no longer satisfies the config.
                 destroy_init.append("-upgrade")

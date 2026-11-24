@@ -75,5 +75,5 @@ warning-class items).
 2. The `at`-position hydration gap is provider-issue material
    (docs/provider-issues-draft.md candidate #6): imported rules always
    diff on `at` until first apply repositions them.
-3. At provider GA: relax `= 1.5.0-prerelease.2` to `~> 1.5` everywhere
+3. Provider GA (`2.0.0`) has shipped: the repo now pins `= 2.0.0` everywhere
    (tracked in docs/release-instructions.md).

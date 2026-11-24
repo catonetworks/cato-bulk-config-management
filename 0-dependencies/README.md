@@ -81,7 +81,7 @@ Credentials resolve in precedence order: explicit vars (`terraform.tfvars`) → 
 CATO_PROFILE=<target-profile> terraform plan
 ```
 
-Requires the published provider `2.0.0-prerelease.1` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
+Requires the published provider `2.0.0` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
 
 ## Working with Existing Objects (Brownfield Deployments)
 
@@ -182,13 +182,13 @@ If unintended changes are made directly in the Cato Management Application:
 | Name | Version |
 |------|---------|
 | terraform | >= 1.7.0 |
-| cato | = 2.0.0-prerelease.1 |
+| cato | = 2.0.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| cato | = 2.0.0-prerelease.1 |
+| cato | = 2.0.0 |
 
 ## Modules
 

@@ -1,11 +1,6 @@
-# BLOCKED: this family's bulk-move resource ships in the provider's
-# feat/bulk-policy-families branch — init/validate fails against published
-# 1.5.0-prerelease.1 until the next provider release.
-#
-# `cato_bulk_dia_move_rule` (declared by module.dia_rules) is not a known
-# resource type in 1.5.0-prerelease.1. See README.md "Blocked on provider
-# release" for the exact `terraform validate` error captured against this
-# config.
+# This family's bulk-move resource `cato_bulk_dia_move_rule` (declared by
+# module.dia_rules) is available in the Cato provider 2.0.0 (GA). This folder
+# pins `= 2.0.0`, so init/validate/apply are no longer blocked.
 
 provider "cato" {
   # baseurl    = "https://api.catonetworks.com/api/v1/graphql2"

@@ -4,7 +4,7 @@
 > README documented a hard `terraform validate` failure because
 > `cato_dynamic_ip_allocation_policy` and `cato_bulk_dia_move_rule` only existed
 > on the provider's `feat/bulk-policy-families` branch. Those resources shipped
-> in `1.5.0-prerelease.2`, and this folder now pins `= 2.0.0-prerelease.1`
+> in `1.5.0-prerelease.2`, and this folder now pins `= 2.0.0`
 > (published to the Terraform Registry) — `terraform init` and `terraform validate`
 > both pass against this exact config.
 
@@ -49,7 +49,7 @@ Credentials resolve in precedence order: explicit vars (`terraform.tfvars`) → 
 CATO_PROFILE=<target-profile> terraform plan
 ```
 
-Requires the published provider `2.0.0-prerelease.1` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
+Requires the published provider `2.0.0` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
 
 ## JSON schema
 
@@ -74,9 +74,8 @@ CATO_PROFILE=<source-profile> catocli export dia_rules --json-filename all_dia_r
 ## Update workflow
 
 1. Edit the JSON directly (or re-export after a Cato UI change).
-2. `terraform plan` from this folder — currently blocked, see above.
-3. `terraform apply` once the plan matches intent — **blocked until the
-   provider ships the bulk-move resource**.
+2. `terraform plan` from this folder.
+3. `terraform apply` once the plan matches intent.
 4. Commit the updated JSON alongside the `.tf` changes.
 
 ## Brownfield adoption
@@ -104,10 +103,8 @@ import {
 ```
 
 `terraform plan` against this should show `1 to import, 1 to add, 0 to
-change, 0 to destroy` once the provider blocker clears — the "1 to add" is
+change, 0 to destroy` — the "1 to add" is
 `cato_bulk_dia_move_rule.all_dia_rules`, which cannot be imported.
-Currently `terraform plan` cannot reach that point since `validate` fails
-first — see "Blocked on provider release".
 </details>
 
 <details>
@@ -118,7 +115,7 @@ catocli import dia_rules_to_tf config_data/all_dia_rules_and_sections.json \
   --module-name module.dia_rules --auto-approve
 ```
 
-Also blocked today for the same reason.
+Available now that the provider blocker is resolved (provider `2.0.0`).
 </details>
 
 ## Troubleshooting
@@ -126,11 +123,9 @@ Also blocked today for the same reason.
 - `catocli ping` — verify API connectivity/credentials.
 - `catocli configure show` — confirm the active profile's account ID matches
   `account_id_<source-profile>_dev` in `terraform.tfvars`.
-- If `terraform validate`/`init` ever **passes** against a future provider
-  version, re-run `terraform plan` against `migration.tf` to adopt the 1
-  live rule, then delete `migration.tf` and remove the "Blocked on
-  provider release" framing from this README. Consider at that point
-  whether `policy_enabled` should be set — Dynamic IP Allocation ships
-  disabled on new tenants.
+- `terraform validate`/`init` now pass against provider `2.0.0`. Run
+  `terraform plan` against `migration.tf` to adopt the 1 live rule, then
+  delete `migration.tf`. Consider whether `policy_enabled` should be set —
+  Dynamic IP Allocation ships disabled on new tenants.
 
 > **Verified (2026-11-04, local `feat/bulk-policy-families` build; resources published in `1.5.0-prerelease.2`):** `terraform plan` succeeds — 1 to import, 2 to add, 0 to change.

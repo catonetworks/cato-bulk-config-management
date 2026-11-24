@@ -125,7 +125,7 @@ cross-file name integrity, import-id presence):
   to carry TF_VARs for other tenants).
 - terraform runs under a generated clean CLI config
   (`TF_CLI_CONFIG_FILE=.bulk_plans/clean.tfrc`) so the **pinned provider**
-  (`= 2.0.0-prerelease.1`) is what gets exercised — not whatever
+  (`= 2.0.0`) is what gets exercised — not whatever
   `dev_overrides` your personal `~/.terraformrc` happens to carry. That
   version is **published to the Terraform Registry**, so the generated config
   is just `provider_installation { direct {} }` — the provider resolves

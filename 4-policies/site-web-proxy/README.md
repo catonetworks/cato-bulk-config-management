@@ -4,7 +4,7 @@
 
 Cato's Site Web Proxy policy — rules that steer site (not just user/client) web traffic through Cato's explicit web proxy. This folder manages the **entire** SWP policy for the `<target-profile>` account as one bulk Terraform-managed unit, sourced from a single JSON export.
 
-> **Experimental: rule management.** `cato_site_web_proxy_rule` is flagged upstream as held back pending a server-side `addRule` API defect fix, though the provider schema pinned here (`1.5.0-prerelease.1`) already includes the resource and the module's `main.tf` creates/manages it. **It has no `ImportState` support** — brownfield adoption below can only bring the live *sections* under Terraform management; the one live rule cannot be imported and will show as a planned "to add" (i.e. a create, not an import) until the provider ships import support. Treat rule create/update/delete through this folder as experimental until that lands — verify changes carefully in CMA after apply.
+> **Experimental: rule management.** `cato_site_web_proxy_rule` is flagged upstream as held back pending a server-side `addRule` API defect fix, though the provider schema pinned here (`2.0.0`) already includes the resource and the module's `main.tf` creates/manages it. **It has no `ImportState` support** — brownfield adoption below can only bring the live *sections* under Terraform management; the one live rule cannot be imported and will show as a planned "to add" (i.e. a create, not an import) until the provider ships import support. Treat rule create/update/delete through this folder as experimental until that lands — verify changes carefully in CMA after apply.
 
 ## Module
 
@@ -20,7 +20,7 @@ Credentials resolve in precedence order: explicit vars (`terraform.tfvars`) → 
 CATO_PROFILE=<target-profile> terraform plan
 ```
 
-Requires the published provider `2.0.0-prerelease.1` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
+Requires the published provider `2.0.0` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
 
 ## JSON schema
 

@@ -2,17 +2,17 @@
 
 Manages Cato's ZTNA Always-On policy — rules that control always-on VPN/client enforcement (device posture, bypass behavior) plus sections — as one bulk Terraform-managed unit sourced from a single JSON export. See "What this manages" below for the full picture.
 
-**Current status: blocked.** This folder can't be applied yet — see the next section for why, and check back once a provider release resolves it.
+**Current status: ready.** The provider release this family needed is now GA (`2.0.0`), and this folder pins `= 2.0.0`. The section below is retained as history of the former blocker.
 
-## Blocked on provider release
+## Former provider blocker (resolved in 2.0.0)
 
 This family's bulk module (`terraform-cato-bulk-ao-rules`) declares
 `cato_bulk_ao_move_rule` — the resource that orders sections/rules and
-publishes the policy. That resource exists **only** on the cato provider's
-unmerged `feat/bulk-policy-families` branch, not in the published
-`1.5.0-prerelease.1` this repo otherwise pins. `terraform init` succeeds;
-`terraform validate` fails. Verbatim output captured against this exact
-config:
+publishes the policy. That resource is available in the Cato provider `2.0.0`
+(GA), which this folder pins (`= 2.0.0`), so init/validate/apply are no longer
+blocked. Historically, against the earlier `1.5.0-prerelease.1`,
+`terraform validate` failed. Verbatim output captured against this config at
+that time:
 
 ```
 $ terraform init -input=false
@@ -35,8 +35,9 @@ $ terraform validate
 
 (Terraform's "Did you mean" suggestion points at an unrelated resource —
 `cato_bulk_wf_move_rule` is the WAN Firewall move resource, a coincidental
-name-similarity match, not a real alternative.) Nothing in this folder can
-be `apply`'d until a provider release merges that branch.
+name-similarity match, not a real alternative.) That blocker is resolved: the
+resource shipped in provider `2.0.0` (GA), which this folder pins (`= 2.0.0`),
+so this folder can now be planned and applied.
 
 ## What this manages
 
@@ -60,8 +61,8 @@ family. A commented-out registry source (`catonetworks/bulk-ao-rules/cato`,
 version `0.0.1`) is left in `main.tf` to swap in once published. Under the
 hood it creates `cato_always_on_section`, `cato_always_on_rule`, and a
 single `cato_bulk_ao_move_rule` resource that encodes rule/section ordering
-and publishes the policy — it is this last resource that is missing from
-`1.5.0-prerelease.1` (see "Blocked on provider release" above). Unlike
+and publishes the policy — it is this last resource that was added in
+provider `2.0.0` (see "Former provider blocker" above). Unlike
 AMFH/Client Connectivity/Dynamic IP Allocation, this module has no
 account-level policy-toggle resource.
 
@@ -76,7 +77,7 @@ Credentials resolve in precedence order: explicit vars (`terraform.tfvars`) → 
 CATO_PROFILE=<target-profile> terraform plan
 ```
 
-Requires the published provider `2.0.0-prerelease.1` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
+Requires the published provider `2.0.0` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
 
 ## JSON schema
 
@@ -101,9 +102,8 @@ CATO_PROFILE=<source-profile> catocli export ao_rules --json-filename all_ao_rul
 ## Update workflow
 
 1. Edit the JSON directly (or re-export after a Cato UI change).
-2. `terraform plan` from this folder — currently blocked, see above.
-3. `terraform apply` once the plan matches intent — **blocked until the
-   provider ships the bulk-move resource**.
+2. `terraform plan` from this folder.
+3. `terraform apply` once the plan matches intent.
 4. Commit the updated JSON alongside the `.tf` changes.
 
 ## Brownfield adoption
@@ -131,11 +131,9 @@ import {
 ```
 
 `terraform plan` against this should show `2 to import, 1 to add, 0 to
-change, 0 to destroy` once the provider blocker clears — the "1 to add" is
+change, 0 to destroy` — the "1 to add" is
 `cato_bulk_ao_move_rule.all_ao_rules`, which cannot be imported (no
-`ImportState`, plan-time-only resource). Currently `terraform plan` cannot
-even reach that point, since `validate` already fails first — see "Blocked
-on provider release".
+`ImportState`, plan-time-only resource).
 </details>
 
 <details>
@@ -146,9 +144,7 @@ catocli import ao_rules_to_tf config_data/all_ao_rules_and_sections.json \
   --module-name module.ao_rules --auto-approve
 ```
 
-Also blocked today for the same reason — the underlying `terraform import`
-calls would hit the same missing-resource-type error on plan/apply of the
-move resource.
+Available now that the provider blocker is resolved (provider `2.0.0`).
 </details>
 
 ## Troubleshooting
@@ -156,9 +152,8 @@ move resource.
 - `catocli ping` — verify API connectivity/credentials.
 - `catocli configure show` — confirm the active profile's account ID matches
   `account_id_<source-profile>_dev` in `terraform.tfvars`.
-- If `terraform validate`/`init` ever **passes** against a future provider
-  version, re-run `terraform plan` against `migration.tf` to adopt the 2
-  live rules, then delete `migration.tf` and remove the "Blocked on
-  provider release" framing from this README.
+- `terraform validate`/`init` now pass against provider `2.0.0`. Run
+  `terraform plan` against `migration.tf` to adopt the 2 live rules, then
+  delete `migration.tf`.
 
 > **Verified against a local `feat/bulk-policy-families` provider build (2026-11-04):** `terraform plan` succeeds — 2 to import, 2 to add, 2 to change (one-time at-block re-assert). The "blocked" status above applies only to the published 1.5.0-prerelease.1.

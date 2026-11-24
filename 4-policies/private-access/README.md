@@ -2,16 +2,16 @@
 
 Manages Cato's Private Access policy — a flat, ordered rule list covering access to internally published applications — as one bulk Terraform-managed unit sourced from a single JSON export. See "What this manages" further below for the full picture.
 
-**Current status: blocked** (for a different reason than the other blocked families — see the next section).
+**Current status: ready.** Its former blocker — an `applications` export-shape
+mismatch inside the module — has been fixed upstream (see the next section).
 
-## Blocked on provider release — but NOT the way the other five families are
+## Former blocker — `applications` export-shape mismatch (resolved in the module)
 
-**This is the one family of the six where `terraform validate` unexpectedly
-PASSES against the published `1.5.0-prerelease.1` provider.** Both
-`cato_private_access_rule` and `cato_private_access_rule_bulk` are already
-present in that provider release — they are not gated behind the unmerged
-`feat/bulk-policy-families` branch the way the other five families'
-move/toggle resources are. Verbatim capture:
+Private Access was never gated behind the provider the way the other five
+families' move/toggle resources were: both `cato_private_access_rule` and
+`cato_private_access_rule_bulk` have shipped for a while and are present in the
+published GA `2.0.0`. `terraform validate` has always passed here. Historical
+capture:
 
 ```
 $ terraform init -input=false
@@ -24,14 +24,11 @@ $ terraform validate
 Success! The configuration is valid.
 ```
 
-However, running `terraform plan` with real `<target-profile>` credentials (per
-the verification instructions — never applied) hits a **different**
-failure: a `locals` evaluation error inside the module itself, caused by a
-schema mismatch between what `catocli export pa_rules` actually emits for
-the `applications` field and what the module's HCL expects to find there.
-Verbatim capture (`TF_VAR_cato_token_<source-profile>_dev` / `TF_VAR_account_id_<source-profile>_dev`
-set from the `<source-profile>` catocli profile, `-parallelism=1`, no `-auto-approve`,
-never applied):
+The real blocker was a schema mismatch between what `catocli export pa_rules`
+emits for the `applications` field and what the module's HCL expected.
+Previously, `terraform plan` with real credentials failed inside the module
+with a `locals` evaluation error (historical capture, `-parallelism=1`, never
+applied):
 
 ```
 $ terraform plan -input=false -parallelism=1
@@ -59,41 +56,37 @@ Plan: 1 to add, 0 to change, 0 to destroy.
 ╵
 ```
 
-### Root cause
+### Root cause and fix
 
-The module's `rule_bodies` local (`terraform-cato-bulk-private-access/main.tf`
-line ~49-53) expects each rule's `applications` field to be a **list** of
-wrapper objects, each shaped `{ application: { name | id } }`:
-
-```hcl
-applications = [
-  for a in try(rw.rule.applications, []) :
-  (can(a.application.name) ? { name = a.application.name } : { id = a.application.id })
-]
-```
-
-But the live export (`../../config_data/all_pa_rules_and_sections.json`,
-produced by `catocli export pa_rules`) instead emits `applications` as a
-**single object** containing one array under the key `"application"` — e.g.
-for rule `Beta User Access - OS Validation`:
+The live export (`../../config_data/all_pa_rules_and_sections.json`, produced
+by `catocli export pa_rules`) emits `applications` as a **single wrapper
+object** containing one array under the key `"application"` — e.g. for rule
+`Beta User Access - OS Validation`:
 
 ```json
 "applications": { "application": [ { "name": "WIKI" } ] }
 ```
 
-So `try(rw.rule.applications, [])` returns that one object (not a list),
-the `for` loop iterates its single value (the `[{name:"WIKI"}]` array
-itself, as the sole "element" of a one-key object), and `a.application`
-fails because that iterated value has no `application` attribute. This is
-a genuine schema mismatch between this module and this exporter's actual
-output shape for `pa_rules` — not something fixable from this folder's
-`.tf` files (the module source lives in a sibling clone,
-`<path-to-local-module-clone>/terraform-cato-bulk-private-access`,
-outside this repo). Flag it upstream (module or exporter) rather than
-patching around it here.
+The module's `rule_bodies` local originally iterated `rw.rule.applications`
+directly, expecting a list of `{ application: { name | id } }` wrappers, so it
+failed on the single-object shape. The module
+(`terraform-cato-bulk-private-access/main.tf`, ~line 52) now unwraps the inner
+`application` array first and tolerates **both** shapes:
 
-Net effect: this folder is still **blocked end-to-end**, just not for the
-reason the other five are. Do not `apply`.
+```hcl
+applications = [
+  for a in try(rw.rule.applications.application, rw.rule.applications, []) :
+  (
+    can(a.application) ?
+    (can(a.application.name) ? { name = a.application.name } : { id = a.application.id }) :
+    (can(a.name) ? { name = a.name } : { id = a.id })
+  )
+]
+```
+
+With that fix, `terraform validate` passes and `terraform plan` proceeds
+through the `applications` evaluation. This folder is **no longer blocked
+end-to-end**.
 
 ## What this manages
 
@@ -138,7 +131,7 @@ Credentials resolve in precedence order: explicit vars (`terraform.tfvars`) → 
 CATO_PROFILE=<target-profile> terraform plan
 ```
 
-Requires the published provider `2.0.0-prerelease.1` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
+Requires the published provider `2.0.0` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
 
 ## JSON schema
 
@@ -149,10 +142,9 @@ data.policy.privateAccess.policy.rules[]            # each: { audit, rule: { nam
 data.policy.privateAccess.policy.rules_in_policy[]   # each: { index_in_policy, rule_name } — THE ordering table (no sections for this type)
 ```
 
-Note the `applications` shape documented above under "Root cause" — the
-module's name-mapping comment (`applications[].application` →
-`applications`) assumes a list-of-wrappers shape; the live exporter output
-is a single wrapper object around one array instead.
+Note the `applications` shape documented above under "Root cause and fix" —
+the live exporter emits a single wrapper object around one `application` array;
+the module unwraps it (and still tolerates a flat list of wrappers).
 
 ## Export (backup) workflow
 
@@ -165,10 +157,8 @@ CATO_PROFILE=<source-profile> catocli export pa_rules --json-filename all_pa_rul
 ## Update workflow
 
 1. Edit the JSON directly (or re-export after a Cato UI change).
-2. `terraform plan` from this folder — currently blocked by the
-   `applications` schema mismatch above, not by a missing resource type.
-3. `terraform apply` — **blocked** until the module/exporter mismatch is
-   resolved upstream.
+2. `terraform plan` from this folder.
+3. `terraform apply`.
 4. Commit the updated JSON alongside the `.tf` changes.
 
 ## Brownfield adoption
@@ -195,12 +185,9 @@ import {
 }
 ```
 
-In principle `terraform plan` against this should show `3 to import, 1 to
-add, 0 to change, 0 to destroy` (the "1 to add" being
+`terraform plan` against this should show `3 to import, 1 to add, 0 to change,
+0 to destroy` (the "1 to add" being
 `cato_private_access_rule_bulk.all_pa_rules`, which cannot be imported).
-In practice, today, `plan` cannot reach that point at all — it fails first
-on the `applications` locals bug documented above, regardless of whether
-`migration.tf` is present.
 </details>
 
 <details>
@@ -211,14 +198,14 @@ catocli import pa_rules_to_tf config_data/all_pa_rules_and_sections.json \
   --module-name module.pa_rules --auto-approve
 ```
 
-Also blocked today for the same reason — the underlying `terraform
-import`/plan evaluation hits the same `applications` locals error.
+An imperative alternative to Option A's import blocks; the underlying plan
+evaluation now handles the `applications` wrapper shape.
 </details>
 
 ## Known limitations
 
-- `applications` schema mismatch — see "Root cause" above. This blocks
-  every plan/apply against the live export until fixed upstream.
+- `applications` export shape — the exporter emits a single wrapper object;
+  the module unwraps it (see "Root cause and fix" above). No action needed.
 - `source.systemGroup` appears in exports for fidelity but has no
   terraform attribute yet.
 - `active_period` is only passed when meaningful.
@@ -230,9 +217,7 @@ import`/plan evaluation hits the same `applications` locals error.
 - `catocli ping` — verify API connectivity/credentials.
 - `catocli configure show` — confirm the active profile's account ID
   matches `account_id_<source-profile>_dev` in `terraform.tfvars`.
-- If `terraform plan` ever gets past the `applications` error (module
-  fixed upstream, or exporter changed to emit a flat list), re-run this
-  folder's verification (`terraform plan -parallelism=1` with real
-  creds, never apply) and update this README's "Blocked on provider
-  release" framing accordingly — this family may ship well before the
-  other five, since its core resources already validate.
+- The former `applications` locals error is fixed (the module unwraps the
+  wrapper object). If a future exporter change alters the `applications` shape
+  again, re-verify with `terraform plan -parallelism=1` (real creds, never
+  apply).

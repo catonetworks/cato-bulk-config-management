@@ -1,11 +1,8 @@
-# BLOCKED: this family's bulk-move resource ships in the provider's
-# feat/bulk-policy-families branch — init/validate fails against published
-# 1.5.0-prerelease.1 until the next provider release.
-#
-# `cato_private_access_rule_bulk` (declared by module.pa_rules) is not a
-# known resource type in 1.5.0-prerelease.1. See README.md "Blocked on
-# provider release" for the exact `terraform validate` error captured
-# against this config.
+# This family's bulk resource `cato_private_access_rule_bulk` (declared by
+# module.pa_rules) is available in the Cato provider 2.0.0 (GA), which this
+# folder pins (`= 2.0.0`). Unlike the other families, Private Access was never
+# gated on provider availability; a separate module/exporter `applications`
+# schema mismatch still blocks end-to-end plan/apply — see README.md.
 
 provider "cato" {
   # baseurl    = "https://api.catonetworks.com/api/v1/graphql2"

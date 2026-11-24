@@ -4,10 +4,10 @@ terraform {
   required_providers {
     cato = {
       source = "catonetworks/cato"
-      # 2.0.0-prerelease.1 is PUBLISHED to the Terraform Registry (adds catocli
+      # 2.0.0 is PUBLISHED to the Terraform Registry (adds catocli
       # profile authentication on top of the 1.5.x policy-family/bulk-move
       # resources). Resolved directly from the registry -- no filesystem mirror.
-      version = "= 2.0.0-prerelease.1"
+      version = "= 2.0.0"
     }
   }
 }

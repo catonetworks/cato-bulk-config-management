@@ -2,21 +2,20 @@
 
 Manages Cato's Client Connectivity policy — rules controlling client connection posture requirements, plus sections and the account-level enable/disable toggle — as one bulk Terraform-managed unit sourced from a single JSON export. See "What this manages" below for the full picture.
 
-**Current status: blocked.** This folder can't be applied yet — see the next section for why, and check back once a provider release resolves it.
+**Current status: ready.** The provider release this family needed is now GA (`2.0.0`), and this folder pins `= 2.0.0`. The section below is retained as history of the former blocker.
 
-## Blocked on provider release
+## Former provider blocker (resolved in 2.0.0)
 
 This family's bulk module (`terraform-cato-bulk-cc-rules`) declares two
-resource types that exist **only** on the cato provider's unmerged
-`feat/bulk-policy-families` branch, not in the published
-`1.5.0-prerelease.1` this repo otherwise pins:
-`cato_client_connectivity_policy` (the optional account-level toggle —
-present in the module even though this folder doesn't set
-`policy_enabled`, so Terraform still tries to parse it) and
+resource types — `cato_client_connectivity_policy` (the optional
+account-level toggle — present in the module even though this folder doesn't
+set `policy_enabled`, so Terraform still tries to parse it) and
 `cato_bulk_cc_move_rule` (the resource that orders sections/rules and
-publishes the policy). `terraform init` succeeds; `terraform validate`
-fails on both resource types. Verbatim output captured against this exact
-config:
+publishes the policy). Both are available in the Cato provider `2.0.0` (GA),
+which this folder pins (`= 2.0.0`), so init/validate/apply are no longer
+blocked. Historically, against the earlier `1.5.0-prerelease.1`,
+`terraform validate` failed on both resource types — verbatim output captured
+against this config at that time:
 
 ```
 $ terraform init -input=false
@@ -48,8 +47,9 @@ $ terraform validate
 
 (Terraform's "Did you mean" suggestion — `cato_bulk_if_move_rule` is the
 Internet Firewall move resource, a coincidental name-similarity match, not
-a real alternative.) Nothing in this folder can be `apply`'d until a
-provider release merges that branch.
+a real alternative.) That blocker is resolved: the resource types shipped in
+provider `2.0.0` (GA), which this folder pins (`= 2.0.0`), so this folder can
+now be planned and applied.
 
 ## What this manages
 
@@ -81,8 +81,8 @@ version `0.0.1`) is left in `main.tf` to swap in once published. Under the
 hood it creates `cato_client_connectivity_section`,
 `cato_client_connectivity_rule`, and a single `cato_bulk_cc_move_rule`
 resource that encodes rule/section ordering and publishes the policy — it
-is this last resource that is missing from `1.5.0-prerelease.1` (see
-"Blocked on provider release" above). Client Connectivity ships **disabled**
+is this last resource that was added in provider `2.0.0` (see
+"Former provider blocker" above). Client Connectivity ships **disabled**
 on new tenants; this folder leaves the toggle unmanaged.
 
 **Export** runs from the **repo root**. **Import and Terraform commands**
@@ -96,7 +96,7 @@ Credentials resolve in precedence order: explicit vars (`terraform.tfvars`) → 
 CATO_PROFILE=<target-profile> terraform plan
 ```
 
-Requires the published provider `2.0.0-prerelease.1` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
+Requires the published provider `2.0.0` from the Terraform Registry. Verify which tenant a profile targets with `catocli configure show` before planning.
 
 ## JSON schema
 
@@ -121,9 +121,8 @@ CATO_PROFILE=<source-profile> catocli export cc_rules --json-filename all_cc_rul
 ## Update workflow
 
 1. Edit the JSON directly (or re-export after a Cato UI change).
-2. `terraform plan` from this folder — currently blocked, see above.
-3. `terraform apply` once the plan matches intent — **blocked until the
-   provider ships the bulk-move resource**.
+2. `terraform plan` from this folder.
+3. `terraform apply` once the plan matches intent.
 4. Commit the updated JSON alongside the `.tf` changes.
 
 ## Brownfield adoption
@@ -151,10 +150,8 @@ import {
 ```
 
 `terraform plan` against this should show `6 to import, 1 to add, 0 to
-change, 0 to destroy` once the provider blocker clears — the "1 to add" is
-`cato_bulk_cc_move_rule.all_cc_rules`, which cannot be imported. Currently
-`terraform plan` cannot reach that point since `validate` fails first —
-see "Blocked on provider release".
+change, 0 to destroy` — the "1 to add" is
+`cato_bulk_cc_move_rule.all_cc_rules`, which cannot be imported.
 </details>
 
 <details>
@@ -165,7 +162,7 @@ catocli import cc_rules_to_tf config_data/all_cc_rules_and_sections.json \
   --module-name module.cc_rules --auto-approve
 ```
 
-Also blocked today for the same reason.
+Available now that the provider blocker is resolved (provider `2.0.0`).
 </details>
 
 ## Troubleshooting
@@ -173,11 +170,9 @@ Also blocked today for the same reason.
 - `catocli ping` — verify API connectivity/credentials.
 - `catocli configure show` — confirm the active profile's account ID matches
   `account_id_<source-profile>_dev` in `terraform.tfvars`.
-- If `terraform validate`/`init` ever **passes** against a future provider
-  version, re-run `terraform plan` against `migration.tf` to adopt the 6
-  live rules, then delete `migration.tf` and remove the "Blocked on
-  provider release" framing from this README. Consider at that point
-  whether `policy_enabled` should be set — Client Connectivity ships
-  disabled on new tenants.
+- `terraform validate`/`init` now pass against provider `2.0.0`. Run
+  `terraform plan` against `migration.tf` to adopt the 6 live rules, then
+  delete `migration.tf`. Consider whether `policy_enabled` should be set —
+  Client Connectivity ships disabled on new tenants.
 
 > **Verified against a local `feat/bulk-policy-families` provider build (2026-11-04):** `terraform plan` succeeds — 6 to import, 2 to add, 0 to change. The "blocked" status above applies only to the published 1.5.0-prerelease.1.

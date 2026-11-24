@@ -143,7 +143,7 @@ is held back upstream pending the API addRule fix (noted in its changelog/README
 2. Bump the four `2-*` folders' module pins when you want the `allow_empty_policy`
    guard active there (if 0.0.9, wf 0.0.10, wnw 0.0.2, tls 0.0.2), and set
    `allow_empty_policy = false` explicitly if you want it visible in config.
-3. At provider GA: relax `= 1.5.0-prerelease.1` to `~> 1.5` across all six folders.
+3. Provider GA has shipped (`2.0.0`): all six folders now pin `= 2.0.0`.
 4. Remove `~/.terraform.d/mirror/.../1.5.0-prerelease.1` only after the registry path
    is confirmed working in `tfsync prod` mode (the mirror copy IS the published
    artifact, so there's no rush).
@@ -249,5 +249,4 @@ until the regression blocker below is cleared.**
    (registry).
 4. Commit + release cato-cli `3.3.0`.
 5. Reference repo: the 18 policy folders + `0-sites`/`1-dependencies`/`2-groups`
-   already pin `= 1.5.0-prerelease.3`; no re-pin needed once that tag is
-   published (relax to `~> 1.5` at GA per section 4.3).
+   now pin `= 2.0.0` (GA, published to the Terraform Registry).
