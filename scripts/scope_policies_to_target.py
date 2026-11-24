@@ -58,11 +58,17 @@ def refs(obj, key_filter=None):
             yield from refs(v, key_filter)
 
 
+# The same object under another key in some policies (keep in step with preflight_check.REF_ALIASES):
+# device posture in Always-On, TLS Inspection and Dynamic IP Allocation; global ranges in Terminal Server.
+REF_ALIASES = {"devicePostureProfile": "device", "allowedHostIP": "globalIpRange", "excludeTraffic": "globalIpRange"}
+
+
 def blockers(rule, missing, skip_scim, skip_rules=(), qualified_name=None):
     out = set()
     if (qualified_name or rule.get("name")) in skip_rules:
         out.add("skipped:" + (qualified_name or rule.get("name")))
     for k, name in refs(rule):
+        k = REF_ALIASES.get(k, k)
         if skip_scim and k in ("usersGroup", "user"):
             out.add(f"{k}:{name}")
         elif name in missing.get(k, set()):

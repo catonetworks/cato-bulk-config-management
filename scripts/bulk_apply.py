@@ -317,6 +317,13 @@ def main():
                              "(absolute) and to the validate/SCIM sub-steps.")
     parser.add_argument("--purge-first", action="store_true",
                         help="run scripts/purge_all.py --dry-run against the profile first (prints inventory; never executes deletions itself)")
+    parser.add_argument("--preflight-source", metavar="PROFILE", default=None,
+                        help="run scripts/preflight_check.py (read-only) with this SOURCE profile against "
+                             "--profile first, and stop if it reports a BLOCKER (dependencies the target is "
+                             "missing: identities, PoPs, licences, CMA-only objects, features)")
+    parser.add_argument("--ignore-preflight", action="store_true",
+                        help="with --preflight-source: print the report but carry on even with BLOCKERs "
+                             "(pair with --keep-going and a scoped --config-dir)")
     parser.add_argument("--skip-validate", action="store_true",
                         help="skip the scripts/validate_config_data.py gate")
     parser.add_argument("--no-upgrade", action="store_true",
@@ -548,6 +555,21 @@ def main():
                      REPO_ROOT, os.environ.copy())
         if result.returncode not in (0,):
             log("ABORT: purge dry-run failed or was refused.")
+            return 1
+
+    if args.preflight_source:
+        log(f"preflight: scripts/preflight_check.py --source-profile {args.preflight_source} "
+            f"--target-profile {args.profile} (read-only)")
+        result = run([sys.executable, os.path.join(REPO_ROOT, "scripts", "preflight_check.py"),
+                      "--source-profile", args.preflight_source, "--target-profile", args.profile,
+                      "--config-dir", config_dir],
+                     REPO_ROOT, os.environ.copy())
+        if result.returncode == 2 and not args.ignore_preflight:
+            log("ABORT: preflight found BLOCKERs (see preflight/preflight_report.md). Fix them, scope the "
+                "policies to the target (scripts/scope_policies_to_target.py), or pass --ignore-preflight.")
+            return 1
+        if result.returncode not in (0, 1, 2):
+            log(f"ABORT: preflight_check.py failed (exit {result.returncode}).")
             return 1
 
     # ---- terraform env -----------------------------------------------------

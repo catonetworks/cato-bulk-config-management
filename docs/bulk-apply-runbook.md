@@ -12,6 +12,7 @@ a human; the scripts gate, sequence, and verify.
 |---|------|---------|---------|
 | 1 | Refresh exports from <source-profile> | `CATO_PROFILE=<source-profile> catocli export all --no-account-suffix --archive-directory config_data_archive` + review diff vs `config_data/` | nothing |
 | 2 | Lint the dataset | `python3 scripts/validate_config_data.py` | nothing |
+| 2a | Dependency check: what the target is missing | `python3 scripts/preflight_check.py --source-profile <source-profile> --target-profile <target> --probe` (see [preflight-check.md](preflight-check.md)); or pass `--preflight-source <source-profile>` to `bulk_apply.py` | nothing (`--probe` opens draft revisions on the target and discards them) |
 | 3 | Refresh SCIM dataset | `python3 scripts/scim_sync.py export --source-profile <source-profile>` | nothing |
 | 4 | Purge the target (optional, first replication or reset) | `python3 scripts/purge_all.py --profile <target> --dry-run` → review → `--execute` | **target** |
 | 5 | Plan everything | `python3 scripts/bulk_apply.py --profile <target> --mode plan` | nothing |
