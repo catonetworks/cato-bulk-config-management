@@ -17,7 +17,13 @@ locals {
 # createGlobalIpRangeBulk, so config_data/global_ip_ranges.json carries a placeholder IP
 # for it as a dev-tenant stopgap. Restore the real IP once the WAF rule is tuned. See:
 # terraform-provider-cato-tests/failed_tests/WAF-403-RETRY-GLOBAL-IP-RANGES.md
+# Declared only when there are ranges to manage. With none (an account that has no global IP ranges), the
+# provider plans an empty `ranges` as absent and Terraform stops with "Provider produced invalid plan ...
+# planned for absence but config wants existence". If a deployment that has ranges later has none to manage,
+# the singleton is destroyed, which removes the ranges it owned: the same thing an empty list would mean.
 resource "cato_global_ip_ranges" "this" {
+  count = length(local.global_ip_ranges) > 0 ? 1 : 0
+
   ranges = [
     for r in local.global_ip_ranges : {
       name        = r.name
@@ -25,4 +31,14 @@ resource "cato_global_ip_ranges" "this" {
       description = try(r.description, null)
     }
   ]
+}
+
+# State from before `count`: the same singleton, now instance [0]. No change in the account.
+moved {
+  from = cato_global_ip_ranges.this
+  to   = cato_global_ip_ranges.this[0]
+}
+
+locals {
+  managed_global_ip_ranges = try(cato_global_ip_ranges.this[0].ranges, [])
 }

@@ -145,6 +145,7 @@ To change what the report says about a finding, edit `guide()` in
 | Identity | Every user group and user the rules name: present in the target or not, grouped by how it gets there (SCIM, LDAP, manual, dynamic). Whether the target has any SCIM-provisioned users at all. With `scim_url` and `scim_token` in the target profile, a read-only call to the SCIM endpoint. | `user.userList`, `user.usersGroupList`, SCIM `GET /Users`, `/Groups` |
 | CMA-only objects | Custom categories, device posture profiles (including `devicePostureProfile` in Always-On, TLS Inspection and Dynamic IP Allocation), bandwidth priorities beyond the defaults, user notification templates, DLP content and EDM profiles, RBI profiles. The API can reference these but cannot create or list them. | `--probe` |
 | Features | RBI and Site Web Proxy (verified with `--probe`), real Static Range Translation, LAN firewall rules that need Layer 7 on a site, the 169.254.169.254 range (also via `allowedHostIP` and `excludeTraffic` in Terminal Server), rules that match the Sanctioned Apps category (its contents are an account setting nobody copies), Wi-Fi passwords, webhook endpoints, IPSec pre-shared keys. | export + `--probe` |
+| Custom applications | Custom applications the Terraform provider refuses as exported: no criteria at all, or a criterion that is only "any protocol" (no port, range or destination). The API and the CMA accept both, so accounts have them. They're left out of `<config-dir>_target` so 0-dependencies doesn't fail on them, and the rules that use one wait until it exists in the target (created by hand, or fixed in the source and exported again). The migration never edits a criterion. | export + `customAppData.customApplicationList` |
 | Integrity | Rules that point at classic groups (invisible to the groups API) and are not yet in `groups.json`, or at sites, ranges, apps or IPs that no longer exist in the source. Rules that name network interfaces, floating subnets or value sets, which the check cannot look up and the migration does not create (a WARN to check by hand). | export + `groups.groupList` |
 | Target | Existing rules whose names clash with source rules (factory rules, or a previous run), existing sites, groups and allocated IPs, policy on/off differences. | `policy.<family>`, `entityLookup` |
 
@@ -219,6 +220,23 @@ into `config_data/export_report.json`, and the check reports it as
 `export_refused` (with the permission each type needs) or `export_failed`.
 Refusals the check also sees by reading the policy live are listed once.
 
+Some exports leave a site's native range details (local IP, DHCP and the
+rest) on its LAN interface, with only the subnet on the site itself; this was
+seen on sites with no WAN interfaces. The site modules read the local IP from
+the site, so those sites failed to plan. `export_source.py` restates them in
+the usual shape after every export: the details on the site's `native_range`,
+and that interface as the default LAN. Nothing is added or dropped.
+`--normalize-only` does the same to an export you already have, with no API
+calls.
+
+It shows its progress as it goes, so a long export never looks stalled. Its
+own lines are stamped with the time since it started (`[export_source 1:05]`)
+and say which of the three steps is running. catocli's line for each type
+appears as that type starts and finishes: catocli holds its output back when
+it writes into a pipe, so the script runs it with `PYTHONUNBUFFERED=1`. After
+15 quiet seconds (`--heartbeat SECONDS` changes this) it prints which type is
+still exporting and how many are done.
+
 ## Leaving out what the target can't hold yet
 
 Every run also writes three files next to the report, built from whatever is
@@ -226,7 +244,7 @@ still missing on that run:
 
 | File | What it is | What to do with it |
 |---|---|---|
-| `scope_command.sh` | A ready-made `scope_policies_to_target.py` command that writes `<config-dir>_target`: the export minus every rule that waits on a BLOCKER, plus the LAN firewall rules that need Layer 7. With nothing missing it writes an identical copy. | `sh preflight/scope_command.sh`, then deploy with `--config-dir config_data_target` |
+| `scope_command.sh` | A ready-made `scope_policies_to_target.py` command that writes `<config-dir>_target`: the export minus every rule that waits on a BLOCKER, plus the LAN firewall rules that need Layer 7, and minus the custom applications Terraform can't create (`--drop-custom-app`). With nothing missing it writes an identical copy. | `sh preflight/scope_command.sh`, then deploy with `--config-dir config_data_target` |
 | `exclude-0-dependencies.auto.tfvars` | `global_ip_ranges_exclude` and `allocated_ips_exclude` (ranges the API firewall blocks, allocations on PoPs the target lacks) | Copy into `0-dependencies/` |
 | `exclude-1-sites.auto.tfvars` | `ipsec_sites_exclude` (IPSec sites on those PoPs) | Copy into `1-sites/` |
 

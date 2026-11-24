@@ -38,9 +38,17 @@ resource "cato_ipsec_site" "this" {
   # allocated IP resolved by name); tunnels are intentionally omitted (added
   # later/manually). An IPv4 endpoint without public_cato_ip_id is rejected by
   # the API ("publicCatoIp is a mandatory field for IPv4 destination type").
+  #
+  # An empty `ipsec` block in the export means the source site has no endpoints
+  # at all (catocli builds it from the account snapshot's ipsec[] list). Such a
+  # site gets `primary = {}`: the provider (v2.0.0 and its prereleases) then
+  # creates the site and skips the endpoint call, matching the source.
   ipsec = merge(
     {
-      primary = {
+      primary = try(each.value.ipsec.primary, null) == null ? {
+        destination_type  = null
+        public_cato_ip_id = null
+        } : {
         destination_type  = try(each.value.ipsec.primary.destination_type, "IPv4")
         public_cato_ip_id = try(local.ipsec_public_cato_ip_id_by_name[each.value.ipsec.primary.public_cato_ip_name], null)
       }
@@ -54,14 +62,20 @@ resource "cato_ipsec_site" "this" {
   )
 
   # Fail at PLAN (not with a confusing API error at apply) when an endpoint would
-  # be an IPv4 destination but has no resolvable publicCatoIp. This happens when a
-  # site's JSON has no ipsec block (the catocli export does not capture
-  # publicCatoIp/destination), so destination_type falls back to "IPv4" and
-  # public_cato_ip_id resolves to null -- the API then rejects it with
-  # "publicCatoIp is a mandatory field for IPv4 destination type".
+  # be an IPv4 destination but has no resolvable publicCatoIp, so the API would
+  # reject it with "publicCatoIp is a mandatory field for IPv4 destination type".
+  # A site whose JSON has no ipsec key at all (an export from a catocli that
+  # didn't capture endpoints) is refused too: it may have endpoints we can't see.
   lifecycle {
     precondition {
-      condition = !(
+      condition = can(each.value.ipsec)
+      error_message = format(
+        "IPSec site %q has no ipsec block in config_data/ipsec_sites.json, so its endpoints are unknown. Export it again with a catocli that records them (scripts/export_source.py does).",
+        each.key,
+      )
+    }
+    precondition {
+      condition = try(each.value.ipsec.primary, null) == null || !(
         try(each.value.ipsec.primary.destination_type, "IPv4") == "IPv4" &&
         try(local.ipsec_public_cato_ip_id_by_name[each.value.ipsec.primary.public_cato_ip_name], null) == null
       )

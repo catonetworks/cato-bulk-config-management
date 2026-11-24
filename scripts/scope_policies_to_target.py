@@ -25,6 +25,12 @@ Usage:
                      setting, such as LAN Layer 7 enforcement, that only the
                      CMA UI can switch on). Nested LAN firewall rules are named
                      "<network rule> / <firewall rule>". Repeatable.
+  --drop-custom-app NAME
+                     leave a custom application out of custom_applications.json
+                     in the copy, so 0-dependencies doesn't try to create it (the
+                     Terraform provider refuses one with no criteria, or with a
+                     criterion that is only "any protocol"). Its rules are left
+                     out only if it's also --missing customApp=NAME. Repeatable.
   --missing KEY=NAME a referenced object that does not exist on the target,
                      by the JSON key rules use for it (usersGroup, user, group,
                      globalIpRange, device, customCategory, bandwidthPriority,
@@ -133,6 +139,7 @@ def main():
     ap.add_argument("--skip-scim", action="store_true")
     ap.add_argument("--missing", action="append", default=[], metavar="KEY=NAME")
     ap.add_argument("--skip-rule", action="append", default=[], metavar="NAME")
+    ap.add_argument("--drop-custom-app", action="append", default=[], metavar="NAME")
     ap.add_argument("--report")
     a = ap.parse_args()
     if os.path.abspath(a.out) == os.path.abspath(a.config_dir):
@@ -153,6 +160,15 @@ def main():
         for name, why in removed.items():
             report.append({"file": os.path.basename(path), "family": family, "rule": name, "blocked_by": why})
         print(f"{os.path.basename(path):40s} left out {len(removed):3d} rule(s)")
+    if a.drop_custom_app:
+        path = os.path.join(a.out, "custom_applications.json")
+        with open(path) as f:
+            apps = json.load(f)
+        kept = [x for x in apps if x.get("name") not in set(a.drop_custom_app)]
+        with open(path, "w") as f:
+            json.dump(kept, f, indent=2)
+        print(f"{'custom_applications.json':40s} left out {len(apps) - len(kept):3d} custom application(s) "
+              "Terraform can't create")
     print(f"total left out: {len(report)} -> {a.out}")
     if a.report:
         with open(a.report, "w") as f:

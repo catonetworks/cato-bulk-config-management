@@ -1,11 +1,11 @@
 output "global_ip_range_ids" {
   description = "Map of global IP range name => Cato range ID."
-  value       = { for r in cato_global_ip_ranges.this.ranges : r.name => r.id }
+  value       = { for r in local.managed_global_ip_ranges : r.name => r.id }
 }
 
 output "global_ip_range_names" {
   description = "Names of all managed global IP ranges."
-  value       = sort([for r in cato_global_ip_ranges.this.ranges : r.name])
+  value       = sort([for r in local.managed_global_ip_ranges : r.name])
 }
 
 output "custom_application_ids" {
@@ -56,7 +56,7 @@ output "dhcp_relay_group_ids" {
 output "deployment_summary" {
   description = "Counts of managed dependency objects."
   value = {
-    total_global_ip_ranges    = length(cato_global_ip_ranges.this.ranges)
+    total_global_ip_ranges    = length(local.managed_global_ip_ranges)
     total_custom_applications = length(cato_custom_application.this)
     total_fqdn_containers     = length(cato_fqdn_container.this)
     total_ip_range_containers = length(cato_ip_address_range_container.this)

@@ -61,6 +61,7 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cato_profile import REPO_ROOT, get_profile, load_protected  # noqa: E402
+from validate_config_data import custom_app_problem  # noqa: E402
 from preflight_report import (_shown, build_runbook, guide, html_to_pdf, render_customer_html,  # noqa: E402
                               render_runbook_md, write_migrate_sh)
 
@@ -242,6 +243,12 @@ def load_tenant(api, with_policies=True):
         t["global_ranges"] = {i["name"] for i in gr["data"]["object"]["globalIpRangeList"]["items"]}
     except Exception:  # noqa: BLE001
         t["global_ranges"] = None
+    try:  # names only; None when unreadable (custom_app_unbuildable then can't tell what's already there)
+        t["custom_apps"] = {a["name"] for a in _paged(api, """query q($a:ID!,$limit:Int!,$from:Int!){ customAppData(accountId:$a){
+            customApplicationList(input:{paging:{limit:$limit,from:$from}}){ items{ name } paging{ total } } } }""",
+            ["customAppData", "customApplicationList"], limit=100, key_total=("paging", "total"))}
+    except Exception:  # noqa: BLE001
+        t["custom_apps"] = None
     hosts = api.q('query q($a:ID!){ entityLookup(accountID:$a, type: host, limit: 1){ total } }')
     t["host_total"] = hosts["data"]["entityLookup"]["total"]
 
@@ -353,6 +360,7 @@ class Report:
         self.skip_rules = set()  # rule names to leave out for a non-reference reason
         self.exclude = {"global_ip_ranges_exclude": set(), "allocated_ips_exclude": set(),
                         "ipsec_sites_exclude": set()}
+        self.drop_custom_apps = set()  # custom applications Terraform can't create: left out of <config>_target
 
     def skip(self, labels):
         """'family: name' labels -> rule names as scope_policies_to_target.py expects them."""
@@ -900,6 +908,37 @@ def check_identity(rep, exp, src, tgt, refs, target_api):
                 fix="Add both to the profile in ~/.cato/credentials to validate the SCIM app (and to use scim_sync.py).")
 
 
+def check_custom_apps(rep, exp, tgt, refs):
+    """Custom applications Terraform can't create as exported. They're left out of <config>_target, so
+    0-dependencies doesn't fail on them, and the rules that use them wait until each exists in the target.
+    The migration never edits a criterion: dropping one would change what the application matches."""
+    apps = exp["custom_apps"] if isinstance(exp["custom_apps"], list) else []
+    bad = {a["name"]: custom_app_problem(a) for a in apps if a.get("name") and custom_app_problem(a)}
+    if not bad:
+        return
+    rep.drop_custom_apps |= set(bad)
+    have = tgt.get("custom_apps")
+    present = sorted(n for n in bad if have is not None and n in have)
+    missing = sorted(n for n in bad if n not in present)
+    if missing:
+        rules = _rules_for(refs, "customApp", missing)
+        rep.leave_out |= {("customApp", n) for n in missing}
+        rep.add("cma-only", "BLOCKER" if rules else "ACTION", "custom_app_unbuildable",
+                {"n": len(missing), "rules": len(rules), "unread": have is None},
+                f"{_pl(len(missing), 'custom application')} Terraform can't create as exported"
+                + (" (the target's custom applications couldn't be read)" if have is None else ""),
+                items=[f"{n}: {bad[n]} ({_uses(refs, 'customApp', n)})" for n in missing], rules=rules,
+                fix="The Cato Terraform provider needs at least one criterion per custom application, and none that "
+                    "is only 'any protocol'; the API and the CMA accept both. Either fix each one in the source CMA "
+                    "(add a criterion, or delete the 'any protocol' row) and export again, or create it by hand in "
+                    "the target CMA with the same name and criteria. Until then the migration leaves it out of "
+                    "0-dependencies and leaves out the rules that use it.")
+    if present:
+        rep.add("cma-only", "OK", "custom_app_by_hand_present", {"n": len(present)},
+                f"{_pl(len(present), 'custom application')} Terraform can't create already "
+                f"{'exists' if len(present) == 1 else 'exist'} in the target", items=present)
+
+
 def check_cma_only(rep, refs, probes):
     cat = "cma-only"
     for kind, (one, many) in CMA_ONLY_KINDS.items():
@@ -1313,11 +1352,13 @@ def write_leave_out(rep, config_dir, out_dir):
             "--config-dir", config_dir, "--out", target_dir,
             "--report", os.path.join(out_dir, "scope_report.json")]
     extra = [f"--missing {shlex.quote(f'{k}={n}')}" for k, n in sorted(rep.leave_out) if n] + \
-            [f"--skip-rule {shlex.quote(n)}" for n in sorted(rep.skip_rules) if n]
+            [f"--skip-rule {shlex.quote(n)}" for n in sorted(rep.skip_rules) if n] + \
+            [f"--drop-custom-app {shlex.quote(n)}" for n in sorted(rep.drop_custom_apps) if n]
     lines = ["#!/bin/sh",
              "# Written by preflight_check.py. Makes " + target_dir,
              "# from the export, leaving out every rule that waits on something the target still lacks",
-             f"# ({len(rep.leave_out)} missing reference(s), {len(rep.skip_rules)} rule(s) left out by name).",
+             f"# ({len(rep.leave_out)} missing reference(s), {len(rep.skip_rules)} rule(s) left out by name, "
+             f"{len(rep.drop_custom_apps)} custom application(s) Terraform can't create).",
              "# Fix what you can, run the check again, and this file is rewritten to match.",
              " ".join(shlex.quote(a) for a in args) + (" \\" if extra else "")]
     lines += [f"  {a}" + (" \\" if i < len(extra) - 1 else "") for i, a in enumerate(extra)]
@@ -1386,6 +1427,7 @@ def main():
     check_pops(rep, exp, src, tgt, refs)
     check_identity(rep, exp, src, tgt, refs, tgt_api)
     check_cma_only(rep, refs, probes)
+    check_custom_apps(rep, exp, tgt, refs)
     check_features(rep, exp, refs, probes, tgt, lan_l7_confirmed=args.lan_l7_confirmed)
     check_integrity(rep, exp, src, refs)
     check_target_state(rep, exp, tgt)

@@ -246,6 +246,16 @@ def guide(f):
                  else f"Confirm {what} {'exists' if n == 1 else 'exist'} in the CMA")
         steps = [SAME_NAMES] if k == "cma_missing" else [CHECK_NAMES]
         return _g("cma_admin", title, CMA_WHY.get(c.get("kind"), "") + affects, steps)
+    if k == "custom_app_unbuildable":
+        it = "it" if n == 1 else "them"
+        return _g("cma_admin", f"Create {_pl(n, 'custom application')} by hand in the CMA",
+                  "Terraform can't create " + ("this custom application" if n == 1 else "these custom applications")
+                  + " as " + ("it's" if n == 1 else "they're") + " defined in your current account. Each needs at "
+                  "least one criterion, and none that is only \"any protocol\" with no port or destination. The CMA "
+                  "accepts both, so the migration copies the rest and leaves " + it + " for you." + affects,
+                  ["In the new account's CMA, create each one listed here with the same name and criteria. Or, in "
+                   "the current account, add a criterion or delete the \"any protocol\" row, then export again.",
+                   "Until then, the migration leaves " + it + " out, along with the rules that use " + it + "."])
     if k == "cma_undecided":
         what = f"{n} {c['one'] if n == 1 else c['many']}"
         return _g("cma_admin", f"Check {what} in the CMA",
@@ -365,6 +375,8 @@ def ready_text(f):
         "feat_l7_confirmed": f"LAN Layer 7 enforcement is on for {', '.join(c.get('sites') or [])}, as confirmed by your team.",
         "int_classic_done": f"{c.get('n')} legacy groups have already been recreated for the migration.",
         "int_ok": "Every site, range, application and IP address your rules name is in the export.",
+        "custom_app_by_hand_present": f"{_pl(c.get('n', 0), 'custom application')} Terraform can't create "
+                                      f"{'has' if c.get('n') == 1 else 'have'} already been created in the new account.",
     }.get(k, f["title"])
 
 
@@ -599,6 +611,7 @@ BEFORE_FOUNDATIONS = ("access_same_account", "perm_source", "perm_target", "expo
                       "lic_sites_short", "lic_sites_unknown", "lic_sites_none", "pop_missing", "feat_srt", "feat_wifi",
                       "feat_webhooks", "int_classic", "tgt_existing_named", "access_trial")
 BEFORE_POLICIES = ("id_missing", "id_scim_inactive", "id_ldap_inactive", "id_scim_endpoint_fail", "cma_missing",
+                   "custom_app_unbuildable",
                    "cma_unverified", "cma_undecided", "feat_rbi_disabled", "feat_rbi_unverified", "feat_swp_fail",
                    "feat_swp_unverified", "feat_sanctioned", "tgt_clash", "lic_ztna_short", "lic_ztna_unknown",
                    "lic_skus_missing", "lic_skus_unknown", "int_stale", "int_unchecked")

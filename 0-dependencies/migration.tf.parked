@@ -19,10 +19,12 @@ removed {
 # and a nonexistent resource, so it is intentionally absent.
 
 # The global-IP-ranges singleton ignores the import id and hydrates the whole
-# account range set; any placeholder works.
+# account range set; any placeholder works. It exists only when the export has
+# ranges (see bulk_global_ip_ranges.tf), so the import does too.
 import {
-  to = cato_global_ip_ranges.this
-  id = "account"
+  for_each = length(local.global_ip_ranges) > 0 ? { "0" = 0 } : {}
+  to       = cato_global_ip_ranges.this[each.value]
+  id       = "account"
 }
 
 # Custom apps import by their Cato id (config_data/custom_applications.json is

@@ -12,6 +12,9 @@ locals {
     for s in local.vsocket_sites_data : {
       for nr in flatten([for li in try(s.lan_interfaces, []) : try(li.network_ranges, [])]) :
       "${s.name}:${nr.name}" => merge(nr, { site_name = s.name })
+      # A range flagged native_range is the site's own native range, which
+      # cato_socket_site.vsocket already creates. Some exports list it here too.
+      if try(nr.native_range, false) != true
     }
   ]...)
 }

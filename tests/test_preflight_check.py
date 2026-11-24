@@ -2,6 +2,7 @@
 
 Run: python3 -m unittest discover -s tests -v
 """
+import json
 import os
 import re
 import sys
@@ -673,11 +674,13 @@ class PastedCommands(unittest.TestCase):
 
 FAKE_CATOCLI = r'''#!PYTHON
 """Stand-in for catocli 3.3.0's export: aborts `export all` at the first type in $DENY, like the real one."""
-import os, sys
+import os, sys, time
 TYPES = ["a_rules", "groups", "sb_rules", "wf_rules", "wnw_rules"]
 args = sys.argv[1:]
 with open(os.environ["CALLS"], "a") as fh:
     fh.write(" ".join(args) + "\n")
+with open(os.environ["CALLS"] + ".env", "a") as fh:
+    fh.write(os.environ.get("PYTHONUNBUFFERED", "") + "\n")
 deny = [t for t in os.environ.get("DENY", "").split(",") if t]
 if args[:2] == ["export", "all"]:
     types = args[args.index("--types") + 1].split(",") if "--types" in args else TYPES
@@ -686,6 +689,8 @@ if args[:2] == ["export", "all"]:
         sys.exit(1)
     for i, t in enumerate(types, 1):
         print(f"[{i}/{len(types)}] {t}: exporting...")
+        if t == os.environ.get("SLOW"):  # a big policy: a quiet spell, with no flush (catocli doesn't flush either)
+            time.sleep(1.5)
         if t in deny:
             print(f"[{i}/{len(types)}] {t}: FAILED (Unexpected error during API call - API returned errors: Access "
                   f"denied: Insufficient privileges for account 1234567)")
@@ -706,7 +711,7 @@ sys.exit(2)
 class ExportSource(unittest.TestCase):
     """export_source.py carries on past types the key is refused, and records them for the check."""
 
-    def _run(self, deny="", noabort=False):
+    def _run(self, deny="", noabort=False, slow="", extra=()):
         import json
         import subprocess
         import tempfile
@@ -715,18 +720,37 @@ class ExportSource(unittest.TestCase):
         os.makedirs(os.path.join(d, "bin"))
         fake = os.path.join(d, "bin", "catocli")
         with open(fake, "w") as fh:
-            fh.write(FAKE_CATOCLI.replace("PYTHON", sys.executable))
+            fh.write(FAKE_CATOCLI.replace("#!PYTHON", "#!" + sys.executable, 1))
         os.chmod(fake, 0o755)
         env = dict(os.environ, PATH=os.path.join(d, "bin") + os.pathsep + os.environ["PATH"], DENY=deny,
-                   CALLS=os.path.join(d, "calls.log"), NOABORT="1" if noabort else "")
+                   CALLS=os.path.join(d, "calls.log"), NOABORT="1" if noabort else "", SLOW=slow)
         script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "export_source.py")
         r = subprocess.run([sys.executable, script, "--profile", "src", "--config-dir", os.path.join(d, "out"),
-                            "--no-webhooks"], env=env, capture_output=True, text=True)
+                            "--no-webhooks", *extra], env=env, capture_output=True, text=True)
         with open(os.path.join(d, "out", "export_report.json")) as fh:
             report = json.load(fh)
         with open(os.path.join(d, "calls.log")) as fh:
             calls = fh.read().splitlines()
+        with open(os.path.join(d, "calls.log.env")) as fh:
+            self.unbuffered = fh.read().splitlines()
         return r, report, calls
+
+    def test_progress_shows_while_a_slow_type_exports(self):
+        # catocli holds its output back when it writes to a pipe, so the export looked stalled for minutes and
+        # then printed everything at once. Each line now arrives as it happens, and a quiet spell gets a line
+        # naming the type still being exported, printed between that type's start and finish.
+        r, _, calls = self._run(slow="wf_rules", extra=("--heartbeat", "0.4"))
+        streamed = [u for c, u in zip(calls, self.unbuffered) if not c.endswith("--types _")]
+        self.assertEqual(set(streamed), {"1"})  # every streamed catocli run hands over each line at once
+        out = r.stdout.splitlines()
+        start = out.index("[4/5] wf_rules: exporting...")
+        end = next(i for i, l in enumerate(out) if l.startswith("[4/5] wf_rules: OK"))
+        still = [i for i, l in enumerate(out) if "Still exporting wf_rules" in l]
+        self.assertTrue(still and all(start < i < end for i in still), r.stdout)
+        self.assertIn("3 of 5 types done", out[still[0]])
+        for words in ("Step 1 of 2: 5 item types", "Step 2 of 2: static hosts", "Finished: 6 exported"):
+            self.assertTrue(any(words in l for l in out), (words, r.stdout))
+        self.assertTrue(re.match(r"\[export_source 0:0\d\] Exporting the current account", out[0]), out[0])
 
     def test_a_refused_type_is_skipped_and_the_rest_still_export(self):
         r, report, calls = self._run(deny="sb_rules")
@@ -765,3 +789,156 @@ class ExportSource(unittest.TestCase):
         rep = pc.Report()
         pc.check_permissions(rep, exp, src_denied, tenant(policies={}))
         self.assertEqual([x["key"] for x in rep.findings if x["key"] in ("perm_source", "export_refused")], ["perm_source"])
+
+
+class UnbuildableCustomApps(unittest.TestCase):
+    """Custom applications the API and CMA accept but the Terraform provider refuses: no criteria at all, or a
+    criterion that is only "any protocol". Real accounts have both, exactly as the API returns them."""
+
+    ANY_ROW = {"protocol": "ANY", "port": [], "portRange": [],
+               "destination": {"destinationIp": None, "domain": [], "fqdn": []}}
+    APPS = [{"name": "Empty", "criteria": []},
+            {"name": "HQ", "criteria": [ANY_ROW, {"protocol": "TCP", "port": [], "portRange": [], "destination": {
+                "destinationIp": {"ip": [], "ipRange": [], "subnet": ["192.168.99.0/24"]}, "domain": [], "fqdn": []}}]},
+            {"name": "Fine", "criteria": [{"protocol": "TCP", "port": ["443"], "portRange": [], "destination": None}]}]
+
+    def test_the_provider_rules(self):
+        self.assertEqual(pc.custom_app_problem(self.APPS[0]), "it has no criteria")
+        self.assertIn("only 'any protocol'", pc.custom_app_problem(self.APPS[1]))
+        self.assertIsNone(pc.custom_app_problem(self.APPS[2]))
+        self.assertIsNone(pc.custom_app_problem({"criteria": [dict(self.ANY_ROW, port=["53"])]}))  # ANY on a port is fine
+
+    def _check(self, target_apps):
+        exp = export(rules=[rule("internetFirewall", "Block empty", customApp=[{"name": "Empty"}]),
+                            rule("wanFirewall", "Allow HQ", customApp=[{"name": "HQ"}]),
+                            rule("wanFirewall", "Allow fine", customApp=[{"name": "Fine"}])])
+        exp["custom_apps"] = [dict(a) for a in self.APPS]
+        rep = pc.Report()
+        pc.check_custom_apps(rep, exp, tenant(custom_apps=target_apps), pc.collect_refs(exp["rules"]))
+        return rep
+
+    def test_left_out_of_the_copy_and_their_rules_wait(self):
+        import preflight_report as pr
+        rep = self._check(target_apps={"HQ"})  # HQ was created by hand in the target; Empty wasn't
+        self.assertEqual(rep.drop_custom_apps, {"Empty", "HQ"})  # neither is for 0-dependencies to create
+        self.assertEqual(rep.leave_out, {("customApp", "Empty")})  # only the missing one holds rules back
+        f = [x for x in rep.findings if x["key"] == "custom_app_unbuildable"][0]
+        self.assertEqual((f["severity"], f["ctx"]["n"]), ("BLOCKER", 1))
+        self.assertEqual(list(f["rules"]), ["internetFirewall: Block empty"])
+        self.assertTrue(f["items"][0].startswith("Empty: it has no criteria"))
+        g = pr.guide(f)
+        self.assertEqual(g["owner"], "cma_admin")
+        self.assertIn("Create 1 custom application by hand", g["title"])
+        self.assertIn("custom_app_unbuildable", pr.BEFORE_POLICIES)
+        ok = [x for x in rep.findings if x["key"] == "custom_app_by_hand_present"][0]
+        self.assertIn("already been created in the new account", pr.ready_text(ok))
+
+    def test_nothing_to_say_when_every_app_is_buildable(self):
+        exp = export()
+        exp["custom_apps"] = [self.APPS[2]]
+        rep = pc.Report()
+        pc.check_custom_apps(rep, exp, tenant(custom_apps=set()), {})
+        self.assertEqual((rep.findings, rep.drop_custom_apps), ([], set()))
+
+    def test_scope_script_drops_the_app_and_only_the_missing_ones_rules(self):
+        import json
+        import subprocess
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d)
+        src = os.path.join(d, "config_data")
+        os.makedirs(src)
+        with open(os.path.join(src, "custom_applications.json"), "w") as fh:
+            json.dump(self.APPS, fh)
+        pol = {"data": {"policy": {"wanFirewall": {"policy": {"enabled": True, "sections": [], "rules": [
+            {"rule": {"name": "Allow HQ", "application": {"customApp": [{"name": "HQ"}]}}},
+            {"rule": {"name": "Block empty", "application": {"customApp": [{"name": "Empty"}]}}}]}}}}}
+        with open(os.path.join(src, "all_wf_rules_and_sections.json"), "w") as fh:
+            json.dump(pol, fh)
+        script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts",
+                              "scope_policies_to_target.py")
+        out = os.path.join(d, "config_data_target")
+        r = subprocess.run([sys.executable, script, "--config-dir", src, "--out", out, "--missing", "customApp=Empty",
+                            "--drop-custom-app", "Empty", "--drop-custom-app", "HQ"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(out, "custom_applications.json")) as fh:
+            self.assertEqual([a["name"] for a in json.load(fh)], ["Fine"])
+        with open(os.path.join(out, "all_wf_rules_and_sections.json")) as fh:
+            kept = [x["rule"]["name"] for x in json.load(fh)["data"]["policy"]["wanFirewall"]["policy"]["rules"]]
+        self.assertEqual(kept, ["Allow HQ"])
+        with open(os.path.join(src, "custom_applications.json")) as fh:
+            self.assertEqual(len(json.load(fh)), 3)  # the source export is never modified
+
+    def test_the_validator_says_why_instead_of_missing(self):
+        import json
+        import tempfile
+        import validate_config_data as v
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d)
+        with open(os.path.join(d, "custom_applications.json"), "w") as fh:
+            json.dump(self.APPS, fh)
+        rep = v.Report(greenfield=True)
+        v.check_dependency_list(rep, d, "custom_applications.json", ["name", "criteria"], ["id"])
+        self.assertEqual(len(rep.errors), 2, rep.errors)
+        self.assertIn("'Empty'): it has no criteria, which the Cato Terraform provider refuses", rep.errors[0])
+        self.assertIn("'HQ'): one of its criteria is only 'any protocol'", rep.errors[1])
+        self.assertFalse(any("missing required key 'criteria'" in e for e in rep.errors))
+
+
+class NativeRangeShape(unittest.TestCase):
+    """Some exports leave a site's native range details on its LAN interface (only the subnet on the site), so the
+    site modules miss the local IP. export_source.py restates them in the usual shape, adding and dropping nothing."""
+
+    def _native(self, subnet, local_ip, **kw):
+        return dict({"name": "Native Range", "subnet": subnet, "vlan": None, "mdns_reflector": False, "gateway": None,
+                     "range_type": "VLAN", "translated_subnet": subnet, "internet_only": False, "local_ip": local_ip,
+                     "interface_index": "LAN1", "dhcp_settings": {"dhcp_type": "ACCOUNT_DEFAULT"}, "native_range": True}, **kw)
+
+    def _site(self, extra=()):
+        return {"name": "Branch", "native_range": {"subnet": "192.168.5.0/24", "range_name": "Native Range"},
+                "lan_interfaces": [{"name": "LAN 01", "index": "LAN1", "dest_type": "LAN",
+                                    "network_ranges": [*extra, self._native("192.168.5.0/24", "192.168.5.1")]}]}
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+        import export_source
+        self.es = export_source
+
+    def test_details_move_to_the_site_and_the_interface_becomes_the_default_lan(self):
+        extra = {"name": "Network 2", "subnet": "10.60.8.0/24", "range_type": "Direct", "local_ip": "10.60.8.1",
+                 "native_range": None}
+        s = self._site(extra=[extra])
+        self.assertTrue(self.es.lift_native_range(s))
+        nr = s["native_range"]
+        self.assertEqual((nr["subnet"], nr["local_ip"], nr["index"], nr["interface_name"], nr["dest_type"]),
+                         ("192.168.5.0/24", "192.168.5.1", "LAN1", "LAN 01", "LAN"))
+        self.assertEqual(nr["dhcp_settings"], {"dhcp_type": "ACCOUNT_DEFAULT"})
+        self.assertEqual(s["lan_interfaces"], [{"default_lan": True, "network_ranges": [extra]}])  # other ranges stay
+        self.assertFalse(self.es.lift_native_range(s))  # already in the usual shape: unchanged on a second pass
+
+    def test_the_usual_shape_and_unmatched_subnets_are_left_alone(self):
+        usual = {"name": "HQ", "native_range": {"subnet": "10.10.10.0/24", "local_ip": "10.10.10.1", "index": "INT_5"},
+                 "lan_interfaces": [{"default_lan": True, "network_ranges": []}]}
+        before = json.dumps(usual)
+        self.assertFalse(self.es.lift_native_range(usual))
+        self.assertEqual(json.dumps(usual), before)
+        other = self._site()
+        other["lan_interfaces"][0]["network_ranges"][0]["subnet"] = "10.9.9.0/24"  # not the site's native subnet
+        self.assertFalse(self.es.lift_native_range(other))
+
+    def test_normalize_only_rewrites_an_existing_export_without_catocli(self):
+        import subprocess
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d)
+        with open(os.path.join(d, "socket_sites.json"), "w") as fh:
+            json.dump({"sites": [self._site()]}, fh)
+        with open(os.path.join(d, "vsocket_sites.json"), "w") as fh:
+            json.dump({"sites": []}, fh)
+        script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "export_source.py")
+        r = subprocess.run([sys.executable, script, "--normalize-only", "--config-dir", d], capture_output=True,
+                           text=True, env=dict(os.environ, PATH="/nonexistent"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Restated the native range of 1 site(s)", r.stdout)
+        with open(os.path.join(d, "socket_sites.json")) as fh:
+            self.assertEqual(json.load(fh)["sites"][0]["native_range"]["local_ip"], "192.168.5.1")

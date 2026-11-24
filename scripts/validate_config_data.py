@@ -480,6 +480,16 @@ def check_dependency_list(report, directory, filename, required_keys, id_keys=No
             # Only a missing/non-list members key is structurally broken.
             if key == "members" and isinstance(item.get(key), list):
                 continue
+            # A custom application with an empty criteria list is real (the API and CMA accept it), but the
+            # Terraform provider refuses it, as it does a criterion that is only "any protocol".
+            if key == "criteria" and isinstance(item.get(key), list):
+                why = custom_app_problem(item)
+                if why:
+                    report.error(f"{filename}: item[{i}] (name={item.get(name_key)!r}): {why}, which the Cato "
+                                 "Terraform provider refuses. Create it by hand in the target CMA (preflight_check.py "
+                                 "leaves it out of the <config>_target copy, with the rules that use it), or fix "
+                                 "it in the source and export again.")
+                continue
             if not item.get(key):
                 report.error(f"{filename}: item[{i}] (name={item.get(name_key)!r}) missing required key {key!r}")
         if id_keys:
@@ -810,6 +820,30 @@ def check_placeholder_sites(report, directory):
         for n in [n for n, c in Counter(seen).items() if c > 1]:
             report.error(f"{filename}: duplicate site name {n!r}")
     return names
+
+
+def _empty_criterion(c):
+    """A custom application criterion that is only "any protocol": no port, port range or destination."""
+    c = c or {}
+    d = c.get("destination") or {}
+    ip = d.get("destinationIp") or {}
+    return (c.get("protocol") in (None, "ANY") and not c.get("port") and not c.get("portRange")
+            and not d.get("domain") and not d.get("fqdn") and not ip.get("ip") and not ip.get("subnet")
+            and not ip.get("ipRange"))
+
+
+def custom_app_problem(app):
+    """Why the Cato Terraform provider refuses a custom application as exported, or None.
+
+    The provider needs at least one criterion, and none that is only "any protocol". The API and the CMA accept
+    both, so accounts do have them, and the export shows them exactly as the account holds them.
+    """
+    crit = app.get("criteria")
+    if not isinstance(crit, list) or not crit:
+        return "it has no criteria"
+    if any(_empty_criterion(c) for c in crit):
+        return "one of its criteria is only 'any protocol', with no port or destination"
+    return None
 
 
 # Required-key / id-key config per dependency file, matching the JSON shapes

@@ -19,7 +19,7 @@ Account: **<target-profile> (<account-id>)**. Live inventory at adoption time: 9
 
 The folder reads eight JSON configuration files from the shared `../config_data/` directory:
 
-- **Global IP Ranges**: `global_ip_ranges.json` — one **singleton** `cato_global_ip_ranges` resource owns the account's entire range set
+- **Global IP Ranges**: `global_ip_ranges.json` — one **singleton** `cato_global_ip_ranges` resource owns the account's entire range set (declared only when there are ranges: with none, the provider can't plan an empty set)
 - **Custom Applications**: `custom_applications.json` — one `cato_custom_application` per element
 - **FQDN Containers**: `fqdn_containers.json` — one `cato_fqdn_container` per element
 - **IP Address Range Containers**: `ip_range_containers.json` — one `cato_ip_address_range_container` per element
