@@ -358,10 +358,10 @@ def purge_dep_type(profile_name, dep: DepType, report: Report):
     elif dep.key == "dhcp_relay_groups":
         # deleteRelayGroup takes a LIST of ids, but delete per-id (single-element
         # list) rather than one bulk call: a bulk delete is all-or-nothing, so one
-        # bad/stale id aborts the whole batch and -- since dhcp_relay_groups is the
-        # LAST type purged -- leaves every relay group behind. Per-id also lets the
-        # network-config service return a committed-but-errored response for a
-        # single group without failing the others; verify-after-delete (re-export,
+        # bad/stale id aborts the whole batch and leaves every relay group behind.
+        # Per-id also lets the network-config service return a committed-but-errored
+        # response for a single group without failing the others;
+        # verify-after-delete (re-export,
         # treat an id that's gone as a success) absorbs that cosmetic error the same
         # way the notification-service deletes above do.
         deletes = []

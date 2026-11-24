@@ -14,7 +14,9 @@ are its strict reverse, folder for folder:
     5. account-level dependencies -- 0-dependencies (first folder applied -> last
        torn down): allocated_ips, then subscription_groups -> mailing_lists /
        webhooks (notification chain, children after referrers) -> custom_applications
-       -> global_ip_ranges -> fqdn_containers -> ip_range_containers -> dhcp_relay_groups
+       -> fqdn_containers -> ip_range_containers -> dhcp_relay_groups -> global_ip_ranges
+       (ranges LAST, after all referencing policies, including Dynamic IP Allocation,
+       have been removed and their revisions published)
 
 The tier list is scripts/purge/families.py's NON_POLICY_TYPES; keep it in
 lock-step with FOLDER_SEQUENCE so delete stays the exact reverse of create.
@@ -25,7 +27,7 @@ deletes the live socket site and everything under it, so after a site purge
 need re-registration -- this is the exact reverse of 1-sites create, intended
 for a full fresh build. The system mailing list 'All Admins' (id -100) is
 skipped (API refuses deletion), the accepted 'system defaults remain' end state.
-    5. SCIM groups+users -- OPT-IN via --include-scim (skipped by default),
+    6. SCIM groups+users -- OPT-IN via --include-scim (skipped by default),
        mirroring bulk_apply's --include-scim so SCIM is an explicit choice on both
        sides. When requested, purged LAST via scripts/scim_sync.py purge: each
        group then each user is DISABLED first, then DELETED (individually), so

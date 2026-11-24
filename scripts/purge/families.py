@@ -129,7 +129,9 @@ SITE_TYPES = [
 # the notification chain subscription_groups -> {mailing_lists, webhooks}
 # (integration[]) means subscription_groups (the referrers) delete first, then
 # their children. allocated IPs live here (0-dependencies), NOT with the app
-# connectors. The rest are independent of each other once all policies are gone.
+# connectors. Global IP ranges go LAST: Dynamic IP Allocation rules (among other
+# policy references) must be removed and published before their ranges can go.
+# deleteGlobalIpRangeBulk is atomic, so one surviving reference blocks all ranges.
 DEP_TYPES = [
     DepType("allocated_ips", "allocated_ips"),
     DepType("subscription_groups", "subscription_groups"),
@@ -141,10 +143,10 @@ DEP_TYPES = [
     # enumerates like any other flat dep.
     DepType("webhooks", "webhooks"),
     DepType("custom_applications", "custom_apps"),
-    DepType("global_ip_ranges", "global_ip_ranges"),
     DepType("fqdn_containers", "fqdn_containers"),
     DepType("ip_range_containers", "ip_range_containers"),
     DepType("dhcp_relay_groups", "dhcp_relay_groups"),
+    DepType("global_ip_ranges", "global_ip_ranges"),
 ]
 
 # Everything-but-policies, in teardown order (exact reverse of FOLDER_SEQUENCE):
